@@ -62,21 +62,23 @@ func (ds *Dataset) Counts() map[string]int {
 // Hash veri kümesinin SHA-256 özetidir; determinizm kanıtı için kullanılır.
 func (ds *Dataset) Hash() string {
 	h := sha256.New()
+	// hash.Hash.Write hiçbir zaman hata döndürmez.
+	write := func(format string, args ...any) { _, _ = fmt.Fprintf(h, format, args...) }
 	for _, t := range ds.Tables {
-		fmt.Fprintf(h, "%s|%s\n", t.Name, strings.Join(t.Columns, ","))
+		write("%s|%s\n", t.Name, strings.Join(t.Columns, ","))
 		for _, row := range t.Rows {
 			for _, v := range row {
 				switch x := v.(type) {
 				case time.Time:
-					fmt.Fprint(h, x.UTC().Format(time.RFC3339Nano))
+					write("%s", x.UTC().Format(time.RFC3339Nano))
 				case []byte:
-					h.Write(x)
+					write("%s", x)
 				default:
-					fmt.Fprintf(h, "%v", x)
+					write("%v", x)
 				}
-				h.Write([]byte{0x1f})
+				write("\x1f")
 			}
-			h.Write([]byte{'\n'})
+			write("\n")
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
@@ -162,7 +164,7 @@ func pickBreed(rng *rand.Rand, breeds []breedInfo) breedInfo {
 // Generate deterministik veri kümesini üretir. today klinik takvim günüdür (UTC gece yarısı).
 func Generate(seed int64, today time.Time, loc *time.Location, scale Scale) *Dataset {
 	g := &gen{
-		rng:        rand.New(rand.NewPCG(uint64(seed), uint64(seed)^0x9e3779b97f4a7c15)),
+		rng:        rand.New(rand.NewPCG(uint64(seed), uint64(seed)^0x9e3779b97f4a7c15)), //nolint:gosec // tohumun bit deseni olduğu gibi kullanılır
 		loc:        loc,
 		today:      vaccine.Day(today),
 		ds:         &Dataset{Anchor: vaccine.Day(today), byName: map[string]*Table{}},
@@ -226,7 +228,7 @@ func (g *gen) reference() {
 	for _, p := range protocols {
 		weeks := make([]int32, len(p.SeriesWeeks))
 		for i, w := range p.SeriesWeeks {
-			weeks[i] = int32(w)
+			weeks[i] = int32(w) //nolint:gosec // protokol hafta sayıları küçük sabitlerdir (< 100)
 		}
 		var breed any
 		if p.Breed != nil {

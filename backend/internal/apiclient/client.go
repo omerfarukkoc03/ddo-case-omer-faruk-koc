@@ -91,7 +91,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body any, opts ...
 	if err != nil {
 		return Response{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
 	return Response{Status: resp.StatusCode, Body: b, Header: resp.Header}, err
 }

@@ -29,7 +29,7 @@ func live(ctx context.Context, apiURL string, seedValue int64, loc *time.Locatio
 		return err
 	}
 	interval := time.Duration(config.EnvInt("SIM_INTERVAL_MS", 4000)) * time.Millisecond
-	rng := rand.New(rand.NewPCG(uint64(seedValue)+1, 99))
+	rng := rand.New(rand.NewPCG(uint64(seedValue)+1, 99)) //nolint:gosec // tohumun bit deseni olduğu gibi kullanılır
 	maxAnimal := int64(config.EnvInt("SIM_ANIMALS", seed.DefaultScale().Animals))
 	slog.Info("live simulation started", "interval", interval.String())
 

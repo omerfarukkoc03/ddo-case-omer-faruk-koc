@@ -1,0 +1,28 @@
+version: "2"
+
+run:
+  build-tags:
+    - integration
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - unconvert
+    - nilerr
+  settings:
+    gosec:
+      excludes:
+        # Tablo/kolon adları yalnız koddaki sabit listelerden gelir (merge.go, seed); kullanıcı girdisi SQL'e
+        # her zaman $n parametresiyle gider.
+        - G201
+        - G202
+        # Seed ve simülatör bilinçli olarak tohumlu PRNG kullanır (aynı tohum → aynı veri).
+        # Güvenliğe duyarlı değerler (refresh token, idempotency anahtarı) crypto/rand ile üretilir.
+        - G404
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck]

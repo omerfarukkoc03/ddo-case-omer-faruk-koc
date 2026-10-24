@@ -122,11 +122,11 @@ func healthcheck() int {
 		}
 	}
 	c := http.Client{Timeout: 3 * time.Second}
-	resp, err := c.Get("http://" + addr + "/health")
+	resp, err := c.Get("http://" + addr + "/health") //nolint:gosec // yalnız konteynerin kendi loopback adresi
 	if err != nil {
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return 1
 	}

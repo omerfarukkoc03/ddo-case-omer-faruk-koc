@@ -58,7 +58,7 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 // Migrate gömülü migrasyonları uygular. Birden çok örnek aynı anda başlasa da goose kilidi korur.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	return migrateDB(ctx, db)
 }
 
