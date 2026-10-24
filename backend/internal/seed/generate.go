@@ -378,10 +378,10 @@ func (g *gen) addAnimal(a animalRec, sex string, chip bool, owners []int64, bill
 	g.ds.byName["animal_weights"].add(g.id("animal_weights"), a.ID, g.weightAt(a, a.Reg), g.localNoon(a.Reg), int64(4))
 }
 
-// weightAt büyüme eğrisiyle tarihteki kiloyu verir (yavrular yetişkin kilosuna yaklaşık bir yılda ulaşır).
+// weightAt tarihteki kiloyu verir: yavrular yetişkin kilosuna bir yılda yaklaşık doğrusal ulaşır (10 haftalık ≈ %24).
 func (g *gen) weightAt(a animalRec, at time.Time) decimal.Decimal {
 	weeks := at.Sub(a.Birth).Hours() / 24 / 7
-	f := math.Min(1, math.Pow(math.Max(weeks, 1)/52, 0.7)+0.08)
+	f := math.Min(1, math.Max(weeks, 1)/52+0.05)
 	return kg(math.Max(0.3, a.AdultKg*f))
 }
 
