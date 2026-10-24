@@ -46,6 +46,23 @@ jobs:
         working-directory: backend
         run: go tool cover -func=coverage.out | tail -1
 
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+
   build:
     name: Build (Docker images)
     runs-on: ubuntu-latest
@@ -54,4 +71,4 @@ jobs:
       - name: Prepare env
         run: cp .env.example .env
       - name: docker compose build
-        run: docker compose build api simulator
+        run: docker compose build
