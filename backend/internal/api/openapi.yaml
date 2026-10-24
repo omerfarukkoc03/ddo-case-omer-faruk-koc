@@ -1,5 +1,659 @@
 openapi: 3.0.3
 info:
   title: PatiKlinik API
-  version: 0.1.0
-paths: {}
+  version: 1.0.0
+  description: |
+    Veteriner klinik hasta, aşı ve randevu sistemi.
+
+    **Kimlik doğrulama:** `POST /api/auth/login` ile alınan `access_token` her istekte `Authorization: Bearer …`
+    başlığıyla gönderilir (15 dk). Süresi dolunca `POST /api/auth/refresh` ile yenilenir (refresh token tek kullanımlıktır;
+    yeniden kullanılırsa tüm oturum ailesi iptal edilir). Demo hesapları: `vet@`, `vet2@`, `vet3@`, `tekniker@`,
+    `resepsiyon@`, `eczane@`, `sahip@`, `sahip2@` + `patiklinik.test`, parola `Demo123!`.
+
+    **Yetki:** Her uç noktanın izinli rolleri açıklamasında `Roller:` ile belirtilir; diğer roller `403 forbidden` alır.
+    Hayvan sahibi (`owner`) yalnız kendi hayvanlarının kayıtlarına erişir.
+
+    **Hata biçimi:** Tüm hatalar `{"error":{"code":"…","message":"…","details":{…}}}` biçimindedir.
+    Sık kodlar: `validation_failed` (422), `unauthorized` (401), `invalid_credentials` (401), `forbidden` (403),
+    `not_found` (404), `duplicate` (409), `resource_conflict` (409, çakışan randevu), `concurrent_update` (409).
+
+    **İdempotans:** Durum değiştiren `POST` isteklerine `Idempotency-Key` başlığı (8-128 karakter) eklenebilir. Aynı
+    kullanıcı + anahtar + gövde ile gelen tekrar istek ilk yanıtı aynen döndürür (`Idempotent-Replayed: true`);
+    aynı anahtar farklı gövdeyle `422 idempotency_key_reused`, ilk istek sürerken `409 idempotency_in_progress` alır.
+
+    **Sayfalama:** Büyük listeler keyset sayfalama kullanır: `?limit=` (1-200) ve önceki yanıttaki `next_cursor` → `?cursor=`.
+
+    **Para:** Tüm tutarlar tam sayı kuruştur (`*_kurus`). Doz ve kilo değerleri ondalık metin olarak döner (ör. `"0.363"`).
+servers:
+  - url: http://localhost:8080
+security:
+  - bearer: []
+tags:
+  - name: Sistem
+  - name: Kimlik
+  - name: F-1 Sahip ve hayvan
+  - name: F-3 / T-1 Aşı
+  - name: F-2 / T-3 Randevu
+  - name: F-4 / T-2 İlaç ve reçete
+  - name: F-5 Yatan hasta
+  - name: F-6 / T-4 Fatura ve paket
+  - name: T-4 Birleştirme
+  - name: Gözlem
+
+paths:
+  /health:
+    get:
+      tags: [Sistem]
+      summary: Sağlık durumu (veritabanı bağlantısı dahil)
+      security: []
+      responses:
+        "200": { description: Sağlıklı, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "503": { description: Veritabanına ulaşılamıyor, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+
+  /api/auth/login:
+    post:
+      tags: [Kimlik]
+      summary: Giriş
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [email, password], properties: { email: { type: string, example: vet@patiklinik.test }, password: { type: string, example: Demo123! } } } } }
+      responses:
+        "200": { description: Token çifti, content: { application/json: { schema: { $ref: "#/components/schemas/Tokens" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Validation" }
+  /api/auth/refresh:
+    post:
+      tags: [Kimlik]
+      summary: Refresh token ile yeni token çifti (rotation)
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/Refresh" }
+      responses:
+        "200": { description: Yeni token çifti, content: { application/json: { schema: { $ref: "#/components/schemas/Tokens" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/auth/logout:
+    post:
+      tags: [Kimlik]
+      summary: Oturumu (refresh token ailesini) kapat
+      security: []
+      requestBody: { $ref: "#/components/requestBodies/Refresh" }
+      responses:
+        "204": { description: Kapatıldı }
+  /api/auth/me:
+    get:
+      tags: [Kimlik]
+      summary: Oturumdaki kullanıcı
+      description: "Roller: tümü"
+      responses:
+        "200": { description: Kullanıcı, content: { application/json: { schema: { $ref: "#/components/schemas/Principal" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/owners:
+    get:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Sahip listesi / arama (ad öneki ya da telefon)
+      description: "Roller: vet, technician, reception, pharmacy"
+      parameters: [{ $ref: "#/components/parameters/Q" }, { $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Cursor" }]
+      responses:
+        "200": { description: Sayfa, content: { application/json: { schema: { $ref: "#/components/schemas/OwnerList" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Sahip kaydı
+      description: "Roller: reception"
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [full_name, phone], properties: { full_name: { type: string }, phone: { type: string, example: "05301112233" }, email: { type: string, nullable: true }, address: { type: string, nullable: true } } } } }
+      responses:
+        "201": { description: Oluşturuldu, content: { application/json: { schema: { $ref: "#/components/schemas/Owner" } } } }
+        "422": { $ref: "#/components/responses/Validation" }
+  /api/owners/{id}:
+    get:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Sahip ve hayvanları
+      description: "Roller: tümü (sahip yalnız kendi kaydı)"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Sahip, content: { application/json: { schema: { type: object, properties: { owner: { $ref: "#/components/schemas/Owner" }, animals: { type: array, items: { $ref: "#/components/schemas/Animal" } } } } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/animals:
+    get:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Hayvan listesi / arama
+      description: "Roller: tümü (sahip yalnız kendi hayvanlarını görür)"
+      parameters:
+        - { $ref: "#/components/parameters/Q" }
+        - { name: microchip, in: query, schema: { type: string, pattern: "^[0-9]{15}$" } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200": { description: Sayfa, content: { application/json: { schema: { $ref: "#/components/schemas/AnimalList" } } } }
+    post:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Hayvan kaydı (mikroçip, çoklu sahip, tahmini yaş) — aşı planı otomatik oluşur
+      description: "Roller: reception. `birth_date` ya da `estimated_age_months` verilmelidir (ikisi birden değil)."
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, species, owners]
+              properties:
+                name: { type: string }
+                species: { type: string, enum: [dog, cat, rabbit] }
+                breed: { type: string, example: Golden Retriever }
+                sex: { type: string, enum: [male, female, unknown] }
+                microchip: { type: string, nullable: true, pattern: "^[0-9]{15}$" }
+                birth_date: { type: string, format: date, nullable: true }
+                estimated_age_months: { type: integer, nullable: true }
+                weight_kg: { type: string, nullable: true, example: "12.5" }
+                owners:
+                  type: array
+                  items: { type: object, required: [owner_id], properties: { owner_id: { type: integer }, relation: { type: string, enum: [owner, co_owner, caretaker] }, is_billing: { type: boolean } } }
+      responses:
+        "201": { description: Oluşturuldu, content: { application/json: { schema: { $ref: "#/components/schemas/Animal" } } } }
+        "409": { description: Aynı mikroçip başka aktif kayıtta (`duplicate`), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Validation" }
+  /api/animals/{id}:
+    get:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Hayvan ve sahipleri
+      description: "Roller: tümü (sahip yalnız kendi hayvanı)"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Hayvan, content: { application/json: { schema: { $ref: "#/components/schemas/Animal" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/animals/{id}/owners:
+    post:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Ortak sahip ekle
+      description: "Roller: reception"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [owner_id], properties: { owner_id: { type: integer }, relation: { type: string }, is_billing: { type: boolean } } } } } }
+      responses: { "201": { description: Eklendi, content: { application/json: { schema: { $ref: "#/components/schemas/Animal" } } } } }
+  /api/animals/{id}/billing-owner:
+    put:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Fatura sorumlusunu değiştir (hayvan başına tek sorumlu)
+      description: "Roller: reception"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [owner_id], properties: { owner_id: { type: integer } } } } } }
+      responses:
+        "200": { description: Güncellendi, content: { application/json: { schema: { $ref: "#/components/schemas/Animal" } } } }
+        "422": { description: Sahip bu hayvanın sahiplerinden değil (`not_an_owner`) }
+  /api/animals/{id}/weights:
+    get:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Kilo geçmişi
+      description: "Roller: tümü (sahip yalnız kendi hayvanı)"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Ölçümler } }
+    post:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Kilo kaydı (eski reçeteleri etkilemez)
+      description: "Roller: vet, technician"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [weight_kg], properties: { weight_kg: { type: string, example: "24.5" } } } } } }
+      responses: { "201": { description: Kaydedildi } }
+
+  /api/animals/{id}/vaccinations:
+    get:
+      tags: [F-3 / T-1 Aşı]
+      summary: Dozlar ve motorun açıklamalı planı
+      description: "Roller: tümü (sahip yalnız kendi hayvanı). `plans[].planned[].reason` her tarihin gerekçesini, `ignored_doses` sayılmayan dozları içerir."
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Aşı takvimi, content: { application/json: { schema: { $ref: "#/components/schemas/Vaccinations" } } } }
+  /api/animals/{id}/vaccinations/replan:
+    post:
+      tags: [F-3 / T-1 Aşı]
+      summary: Planı yeniden hesapla (idempotent)
+      description: "Roller: vet, technician, reception, pharmacy"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Güncel dozlar } }
+  /api/vaccine-doses/{id}/administer:
+    post:
+      tags: [F-3 / T-1 Aşı]
+      summary: Planlı dozu uygula; isteğe bağlı paketten seans düş (T-4); sonraki dozlar yeniden planlanır
+      description: "Roller: vet, technician"
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [batch_no], properties: { batch_no: { type: string }, administered_on: { type: string, format: date }, use_package: { type: boolean } } } } } }
+      responses:
+        "200": { description: Uygulandı }
+        "409": { description: "`dose_not_planned` (zaten uygulanmış) ya da `package_exhausted` (seans kalmadı)" }
+  /api/jobs/reminders/run:
+    post:
+      tags: [F-3 / T-1 Aşı]
+      summary: Hatırlatma job'ını çalıştır (idempotent; eşzamanlı çalışmada biri atlanır)
+      description: "Roller: vet, reception"
+      responses: { "200": { description: "`created` yeni hatırlatma sayısı", content: { application/json: { schema: { type: object, properties: { created: { type: integer }, skipped_concurrent_run: { type: boolean }, run_date: { type: string, format: date } } } } } } }
+  /api/reminders:
+    get:
+      tags: [F-3 / T-1 Aşı]
+      summary: Hatırlatmalar ve e-posta şablonu metni
+      description: "Roller: tümü (sahip yalnız kendisine gidenler)"
+      parameters: [{ $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Cursor" }]
+      responses: { "200": { description: Sayfa } }
+
+  /api/resources:
+    get:
+      tags: [F-2 / T-3 Randevu]
+      summary: Veteriner ve oda kaynakları
+      description: "Roller: vet, technician, reception, pharmacy"
+      responses: { "200": { description: Kaynaklar } }
+  /api/appointments:
+    get:
+      tags: [F-2 / T-3 Randevu]
+      summary: Günlük randevu takvimi
+      description: "Roller: tümü (sahip tarih filtresi olmadan kendi hayvanlarının randevularını görür)"
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date }, description: Yerel gün (varsayılan bugün) }
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 14 } }
+        - { name: vet_id, in: query, schema: { type: integer } }
+        - { name: animal_id, in: query, schema: { type: integer } }
+      responses: { "200": { description: Randevular, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Appointment" } } } } } } } }
+    post:
+      tags: [F-2 / T-3 Randevu]
+      summary: Randevu oluştur (çakışma veritabanı EXCLUDE kısıtıyla engellenir)
+      description: "Roller: reception. Mesai 09:00-19:00 (Europe/Istanbul). Ameliyat için oda ameliyathane olmalıdır."
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [animal_id, vet_id, room_id, kind, starts_at, duration_min], properties: { animal_id: { type: integer }, vet_id: { type: integer }, room_id: { type: integer }, kind: { type: string, enum: [exam, vaccination, surgery, control] }, starts_at: { type: string, format: date-time }, duration_min: { type: integer, minimum: 10, maximum: 240 }, reason: { type: string } } } } }
+      responses:
+        "201": { description: Oluşturuldu, content: { application/json: { schema: { $ref: "#/components/schemas/Appointment" } } } }
+        "409": { description: Veteriner ya da oda o saatte dolu (`resource_conflict`) }
+        "422": { $ref: "#/components/responses/Validation" }
+  /api/appointments/emergency:
+    post:
+      tags: [F-2 / T-3 Randevu]
+      summary: Acil vaka — hemen başlatılır, çakışan randevular en az bozulmayla yeniden planlanır
+      description: |
+        Roller: vet, reception. Maliyet = kayma dakikası (öne çekme 2x) + veteriner değişimi 60 + oda değişimi 5.
+        Başlamış ve acil randevular taşınmaz; tüm çiftler doluysa ilk boşalan çifte (en fazla 4 saat) ertelenir.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [animal_id, reason], properties: { animal_id: { type: integer }, reason: { type: string }, duration_min: { type: integer, default: 30 }, room_kind: { type: string, enum: [exam_room, surgery_room] }, vet_id: { type: integer, description: Belirli veteriner istenirse } } } } }
+      responses:
+        "201": { description: Plan, content: { application/json: { schema: { $ref: "#/components/schemas/EmergencyResult" } } } }
+        "409": { description: 4 saat içinde boşalan çift yok (`no_emergency_capacity`) }
+  /api/appointments/{id}/status:
+    post:
+      tags: [F-2 / T-3 Randevu]
+      summary: Randevu durumu (scheduled → checked_in → completed; iptal, gelmedi)
+      description: "Roller: vet, technician, reception, pharmacy"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [checked_in, completed, cancelled, no_show] } } } } } }
+      responses:
+        "200": { description: Güncellendi }
+        "409": { description: Geçersiz geçiş (`invalid_status_transition`) }
+  /api/examinations:
+    post:
+      tags: [F-2 / T-3 Randevu]
+      summary: Muayene kaydı (randevuyu tamamlar, kiloyu günceller)
+      description: "Roller: vet"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [animal_id, findings], properties: { appointment_id: { type: integer, nullable: true }, animal_id: { type: integer }, weight_kg: { type: string }, temperature_c: { type: string }, findings: { type: string }, diagnosis: { type: string } } } } } }
+      responses: { "201": { description: Kaydedildi } }
+  /api/animals/{id}/examinations:
+    get:
+      tags: [F-2 / T-3 Randevu]
+      summary: Muayene geçmişi
+      description: "Roller: tümü (sahip yalnız kendi hayvanı)"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Muayeneler } }
+
+  /api/drugs:
+    get:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: İlaçlar, türe göre doz aralıkları, kontrendikasyonlar ve stok
+      description: "Roller: vet, technician, reception, pharmacy"
+      responses: { "200": { description: İlaçlar } }
+  /api/dosage/calculate:
+    post:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: Doz önizlemesi — adım adım hesap, yazmaz
+      description: |
+        Roller: vet. Kontrendikasyon (`contraindicated`) kesin engeldir. Azami doz aşımı `max_dose_exceeded` döner;
+        `override_reason` (≥10 karakter) ile yazılabilir. Azaminin 2 katı (`dose_hard_limit`) hiçbir koşulda yazılamaz.
+      requestBody: { $ref: "#/components/requestBodies/Dose" }
+      responses:
+        "200": { description: Hesap, content: { application/json: { schema: { $ref: "#/components/schemas/DoseResult" } } } }
+        "422": { description: "`contraindicated`, `species_not_supported`, `dose_below_range`, `max_dose_exceeded`, `dose_hard_limit`, `no_practical_tablet_dose`, `invalid_dilution`, `weight_required`" }
+  /api/prescriptions:
+    get:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: Reçeteler (eczane kuyruğu için `status=active`)
+      description: "Roller: vet, pharmacy"
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, dispensed, cancelled] } }
+        - { name: animal_id, in: query, schema: { type: integer } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses: { "200": { description: Sayfa } }
+    post:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: Reçete yaz — hesap sunucuda tekrarlanır, kilo ve adımlar kopyalanır (sonradan değişmez)
+      description: "Roller: vet"
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { $ref: "#/components/requestBodies/Dose" }
+      responses:
+        "201": { description: Reçete, content: { application/json: { schema: { $ref: "#/components/schemas/Prescription" } } } }
+        "422": { description: Doz kuralı ihlali (bkz. /api/dosage/calculate) }
+  /api/prescriptions/{id}:
+    get:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: Reçete (kilo değiştiyse `weight_changed_note` içerir)
+      description: "Roller: tümü (sahip yalnız kendi hayvanı)"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Reçete, content: { application/json: { schema: { $ref: "#/components/schemas/Prescription" } } } } }
+  /api/prescriptions/{id}/dispense:
+    post:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: İlacı teslim et — stok FEFO düşer, partiler kilitlenir, süresi geçmiş parti kullanılmaz
+      description: "Roller: pharmacy"
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "200": { description: Kullanılan partiler }
+        "409": { description: "`insufficient_stock` ya da `prescription_not_active`" }
+  /api/stock:
+    get:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: Stok partileri
+      description: "Roller: vet, pharmacy"
+      responses: { "200": { description: Partiler } }
+  /api/stock/batches:
+    post:
+      tags: [F-4 / T-2 İlaç ve reçete]
+      summary: Stok girişi (aynı parti numarasında miktar eklenir)
+      description: "Roller: pharmacy"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [drug_id, lot_no, expires_on, quantity], properties: { drug_id: { type: integer }, lot_no: { type: string }, expires_on: { type: string, format: date }, quantity: { type: integer } } } } } }
+      responses: { "201": { description: Kaydedildi } }
+
+  /api/cages:
+    get:
+      tags: [F-5 Yatan hasta]
+      summary: Kafes panosu (durum, izinli sonraki durumlar, yatan hasta)
+      description: "Roller: vet, technician, reception, pharmacy"
+      responses: { "200": { description: Kafesler } }
+  /api/cages/{id}/transition:
+    post:
+      tags: [F-5 Yatan hasta]
+      summary: Kafes durum geçişi (boş → dolu → temizlik → hazır → dolu)
+      description: "Roller: vet, technician. Dolu durumuna yalnız yatışla geçilir."
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [to], properties: { to: { type: string, enum: [empty, cleaning, ready] } } } } } }
+      responses:
+        "200": { description: Geçildi }
+        "409": { description: "`cage_invalid_transition`, `cage_has_patient`" }
+  /api/hospitalizations:
+    get:
+      tags: [F-5 Yatan hasta]
+      summary: Yatışlar ve notlar
+      description: "Roller: vet, technician, reception, pharmacy"
+      parameters: [{ name: status, in: query, schema: { type: string, enum: [active, discharged] } }]
+      responses: { "200": { description: Yatışlar } }
+    post:
+      tags: [F-5 Yatan hasta]
+      summary: Hasta yatır (kafes verilmezse uygun ilk kafes SKIP LOCKED ile seçilir)
+      description: "Roller: vet"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [animal_id, reason], properties: { animal_id: { type: integer }, cage_id: { type: integer, nullable: true }, reason: { type: string } } } } } }
+      responses:
+        "201": { description: Yatırıldı }
+        "409": { description: "`cage_not_available`, `no_cage_available`, `duplicate` (hayvan zaten yatıyor)" }
+  /api/hospitalizations/{id}/discharge:
+    post:
+      tags: [F-5 Yatan hasta]
+      summary: Taburcu (kafes temizliğe geçer)
+      description: "Roller: vet"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Taburcu edildi } }
+  /api/hospitalizations/{id}/notes:
+    post:
+      tags: [F-5 Yatan hasta]
+      summary: Yatış notu
+      description: "Roller: vet, technician"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string } } } } } }
+      responses: { "201": { description: Eklendi } }
+
+  /api/invoices:
+    get:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Faturalar
+      description: "Roller: tümü (sahip yalnız kendisine kesilenler)"
+      parameters: [{ name: status, in: query, schema: { type: string, enum: [open, paid, void] } }, { $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Cursor" }]
+      responses: { "200": { description: Sayfa } }
+    post:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Fatura kes — kime kesileceği kuralı uygulanır
+      description: |
+        Roller: reception. Kural: `owner_id` verilmişse o sahip (`explicit`, hayvanın sahiplerinden biri olmalı) →
+        fatura sorumlusu (`billing_owner`) → en eski kayıtlı sahip (`first_owner`). Toplam sunucuda satırlardan hesaplanır.
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [animal_id, lines], properties: { animal_id: { type: integer }, owner_id: { type: integer, nullable: true }, lines: { type: array, items: { type: object, properties: { description: { type: string }, quantity: { type: integer }, unit_price_kurus: { type: integer } } } } } } } }
+      responses: { "201": { description: Fatura, content: { application/json: { schema: { $ref: "#/components/schemas/Invoice" } } } } }
+  /api/invoices/{id}:
+    get:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Fatura, satırlar ve ödemeler
+      description: "Roller: tümü (sahip yalnız kendisine kesilen)"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Fatura, content: { application/json: { schema: { $ref: "#/components/schemas/Invoice" } } } } }
+  /api/invoices/{id}/payments:
+    post:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Tahsilat (fatura kilitlenir; fazla ödeme imkânsız)
+      description: "Roller: reception"
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [amount_kurus, method], properties: { amount_kurus: { type: integer }, method: { type: string, enum: [cash, card, transfer] } } } } } }
+      responses:
+        "201": { description: Güncel fatura, content: { application/json: { schema: { $ref: "#/components/schemas/Invoice" } } } }
+        "409": { description: "`invoice_not_open`" }
+        "422": { description: "`overpayment`" }
+  /api/packages:
+    get:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Aşı paketleri
+      description: "Roller: vet, technician, reception, pharmacy"
+      responses: { "200": { description: Paketler } }
+  /api/package-purchases:
+    post:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Paket sat (fatura kuralıyla faturalanır)
+      description: "Roller: reception"
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [package_id, animal_id], properties: { package_id: { type: integer }, animal_id: { type: integer }, owner_id: { type: integer, nullable: true } } } } } }
+      responses: { "201": { description: "`purchase_id`, `invoice_id`" } }
+  /api/animals/{id}/packages:
+    get:
+      tags: [F-6 / T-4 Fatura ve paket]
+      summary: Hayvanın paketleri ve kalan seanslar
+      description: "Roller: tümü (sahip yalnız kendi hayvanı)"
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses: { "200": { description: Paketler } }
+
+  /api/duplicates/{entity}:
+    get:
+      tags: [T-4 Birleştirme]
+      summary: Olası mükerrer çiftler (sahip — aynı telefon; hayvan — aynı ad/tür + aynı telefonlu sahip)
+      description: "Roller: reception"
+      parameters: [{ name: entity, in: path, required: true, schema: { type: string, enum: [owners, animals] } }]
+      responses: { "200": { description: Aday çiftler } }
+  /api/merges:
+    get:
+      tags: [T-4 Birleştirme]
+      summary: Birleştirme geçmişi
+      description: "Roller: reception"
+      responses: { "200": { description: İşlemler } }
+    post:
+      tags: [T-4 Birleştirme]
+      summary: Mükerrer kaydı birleştir (geri alınabilir; taşınan her satır anlık görüntüye yazılır)
+      description: "Roller: reception"
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [entity, survivor_id, duplicate_id], properties: { entity: { type: string, enum: [owner, animal] }, survivor_id: { type: integer }, duplicate_id: { type: integer } } } } } }
+      responses:
+        "201": { description: Birleştirme işlemi }
+        "409": { description: "`already_merged`, `both_hospitalized`" }
+        "422": { description: "`species_mismatch`, `microchip_mismatch`" }
+  /api/merges/{id}/undo:
+    post:
+      tags: [T-4 Birleştirme]
+      summary: Birleştirmeyi geri al
+      description: "Roller: reception. Taşınan satırlar sonradan değiştiyse kısmi geri alma yapılmaz: `409 merge_undo_conflict`."
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Geri alındı }
+        "409": { description: "`already_undone`, `merge_undo_conflict`" }
+
+  /api/audit:
+    get:
+      tags: [Gözlem]
+      summary: Denetim kaydı (append-only)
+      description: "Roller: vet, reception"
+      parameters: [{ name: entity, in: query, schema: { type: string } }, { name: entity_id, in: query, schema: { type: string } }, { $ref: "#/components/parameters/Limit" }, { $ref: "#/components/parameters/Cursor" }]
+      responses: { "200": { description: Sayfa } }
+  /api/stats/live:
+    get:
+      tags: [Gözlem]
+      summary: Canlı pano istatistikleri ve son olaylar
+      description: "Roller: vet, technician, reception, pharmacy"
+      responses: { "200": { description: İstatistikler } }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer } }
+    Q: { name: q, in: query, schema: { type: string }, description: Ad öneki (sahipte telefon da) }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    Cursor: { name: cursor, in: query, schema: { type: string }, description: Önceki yanıttaki next_cursor }
+    IdempotencyKey: { name: Idempotency-Key, in: header, schema: { type: string, minLength: 8, maxLength: 128 } }
+  requestBodies:
+    Refresh:
+      required: true
+      content: { application/json: { schema: { type: object, required: [refresh_token], properties: { refresh_token: { type: string } } } } }
+    Dose:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [animal_id, drug_id, doses_per_day, duration_days]
+            properties:
+              animal_id: { type: integer }
+              drug_id: { type: integer }
+              examination_id: { type: integer, nullable: true }
+              mg_per_kg: { type: string, nullable: true, description: Boşsa aralığın alt sınırı }
+              doses_per_day: { type: integer, minimum: 1, maximum: 6 }
+              duration_days: { type: integer, minimum: 1, maximum: 90 }
+              dilute_to_mg_per_ml: { type: string, nullable: true }
+              override_reason: { type: string, description: Azami doz aşımında zorunlu (≥10 karakter) }
+  responses:
+    Unauthorized: { description: Kimlik doğrulanamadı, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Forbidden: { description: Rol ya da kayıt sahipliği yetkisi yok, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound: { description: Bulunamadı, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Validation: { description: Girdi doğrulaması başarısız, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: object, properties: { code: { type: string }, message: { type: string }, details: { type: object } } }
+    Health: { type: object, properties: { status: { type: string }, database: { type: string }, version: { type: string }, time: { type: string, format: date-time } } }
+    Principal: { type: object, properties: { user_id: { type: integer }, role: { type: string, enum: [owner, vet, technician, reception, pharmacy] }, owner_id: { type: integer }, name: { type: string } } }
+    Tokens: { type: object, properties: { access_token: { type: string }, refresh_token: { type: string }, expires_at: { type: string, format: date-time }, user: { $ref: "#/components/schemas/Principal" } } }
+    Owner: { type: object, properties: { id: { type: integer }, full_name: { type: string }, phone: { type: string }, email: { type: string, nullable: true }, address: { type: string, nullable: true }, merged_into: { type: integer, nullable: true } } }
+    OwnerList: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Owner" } }, next_cursor: { type: string, nullable: true } } }
+    Animal:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        species: { type: string }
+        breed: { type: string }
+        microchip: { type: string, nullable: true }
+        birth_date: { type: string, format: date }
+        birth_date_estimated: { type: boolean }
+        weight_kg: { type: string, nullable: true }
+        merged_into: { type: integer, nullable: true }
+        owners: { type: array, items: { type: object, properties: { owner_id: { type: integer }, full_name: { type: string }, relation: { type: string }, is_billing: { type: boolean } } } }
+    AnimalList: { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Animal" } }, next_cursor: { type: string, nullable: true } } }
+    Vaccinations:
+      type: object
+      properties:
+        today: { type: string, format: date }
+        doses: { type: array, items: { type: object, properties: { id: { type: integer }, vaccine_code: { type: string }, dose_number: { type: integer }, kind: { type: string, enum: [primary, booster] }, due_date: { type: string, format: date }, status: { type: string, enum: [planned, administered] }, administered_at: { type: string, nullable: true }, package_used: { type: boolean } } } }
+        plans: { type: array, items: { type: object, properties: { vaccine_code: { type: string }, late_start: { type: boolean }, series_complete: { type: boolean }, estimated_age: { type: boolean }, ignored_doses: { type: array, items: { type: object } }, planned: { type: array, items: { type: object, properties: { due_date: { type: string }, overdue: { type: boolean }, reason: { type: string } } } } } } }
+    Appointment:
+      type: object
+      properties:
+        id: { type: integer }
+        animal_id: { type: integer }
+        vet_id: { type: integer }
+        room_id: { type: integer }
+        kind: { type: string }
+        priority: { type: string, enum: [normal, emergency] }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        status: { type: string }
+        original_starts_at: { type: string, format: date-time, nullable: true }
+        reschedule_count: { type: integer }
+    EmergencyResult:
+      type: object
+      properties:
+        emergency: { $ref: "#/components/schemas/Appointment" }
+        moves: { type: array, items: { type: object, properties: { appointment_id: { type: integer }, from_start: { type: string }, to_start: { type: string }, from_vet_id: { type: integer }, to_vet_id: { type: integer }, cost: { type: integer } } } }
+        cancelled_for_manual_rebooking: { type: array, items: { type: integer } }
+        disruption_cost: { type: integer }
+        wait_minutes: { type: integer }
+        explanation: { type: string }
+    DoseResult:
+      type: object
+      properties:
+        weight_kg: { type: string }
+        mg_per_kg: { type: string }
+        dose_mg: { type: string }
+        volume_ml: { type: string }
+        tablets: { type: string }
+        dilution: { type: object, properties: { target_mg_per_ml: { type: string }, stock_ml: { type: string }, diluent_ml: { type: string }, final_ml: { type: string } } }
+        dispense_quantity: { type: integer }
+        dispense_unit: { type: string }
+        exceeds_max: { type: boolean }
+        warnings: { type: array, items: { type: string } }
+        steps: { type: array, items: { type: object, properties: { label: { type: string }, formula: { type: string }, result: { type: string } } } }
+    Prescription:
+      type: object
+      properties:
+        id: { type: integer }
+        animal_id: { type: integer }
+        drug_name: { type: string }
+        weight_kg_snapshot: { type: string }
+        mg_per_kg: { type: string }
+        dose_mg: { type: string }
+        dispense_quantity: { type: integer }
+        calculation: { $ref: "#/components/schemas/DoseResult" }
+        exceeds_max: { type: boolean }
+        override_reason: { type: string, nullable: true }
+        status: { type: string }
+        current_animal_weight_kg: { type: string }
+        weight_changed_note: { type: string }
+    Invoice:
+      type: object
+      properties:
+        id: { type: integer }
+        animal_id: { type: integer }
+        owner_id: { type: integer }
+        billing_rule: { type: string, enum: [explicit, billing_owner, first_owner] }
+        status: { type: string, enum: [open, paid, void] }
+        total_kurus: { type: integer }
+        paid_kurus: { type: integer }
+        due_kurus: { type: integer }
+        lines: { type: array, items: { type: object } }
+        payments: { type: array, items: { type: object } }
