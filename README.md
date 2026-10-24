@@ -39,6 +39,16 @@ Başlangıç sırası `healthcheck` ve `depends_on: service_healthy` ile yöneti
 uygular), sonra `simulator` (seed eder, ardından canlı olay üretir) ve `frontend`. Migrasyon ve seed elle adım
 gerektirmez. Seed ~20 sn sürer, sıcak önbellekle tüm sistem ~1 dakikada hazır olur.
 
+**Soğuk makine ölçümü.** Repo GitHub'dan sıfırdan klonlandı. Docker derleme önbelleği, proje imajları, veritabanı
+hacmi ve tüm temel imajlar (golang, node, nginx, postgres, distroless) önceden silindi. Ortam Windows 11 + Docker
+Desktop (WSL2), ev internet bağlantısı. Sonuç:
+- `docker compose up --build` 219 sn'de döndü.
+- Tüm servisler (seed dahil) **285 sn**'de `healthy` oldu.
+- Ardından `make verify` 15/15 PASS.
+
+Sürenin en büyük kalemi temel imajların indirilmesiydi (golang tek başına ~50 sn); Linux ya da daha hızlı bir
+bağlantıda süre belirgin şekilde kısalır.
+
 | Komut | Ne yapar |
 |---|---|
 | `make verify` (`docker compose --profile verify run --rm verify`) | Her özelliği ve zorlu görevi uçtan uca dener, PASS/FAIL tablosu basar |
