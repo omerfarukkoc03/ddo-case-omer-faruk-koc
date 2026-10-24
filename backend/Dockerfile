@@ -5,13 +5,12 @@
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 ARG VERSION=dev
+# `go mod download` kullanılmaz: go.mod'daki tüm modülleri (testcontainers gibi yalnız testte kullanılanlar dahil)
+# indirirdi. go build yalnız ikililerin gerçekten içe aktardığı modülleri indirir; üç ikili tek çağrıda paralel derlenir.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/simulator ./cmd/simulator && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/verify ./cmd/verify
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/ ./cmd/api ./cmd/simulator ./cmd/verify
 
 FROM gcr.io/distroless/static-debian12:nonroot AS api
 COPY --from=build /out/api /app/api
