@@ -49,6 +49,7 @@ func live(ctx context.Context, apiURL string, seedValue int64, loc *time.Locatio
 				vet = v
 			}
 		case <-tick.C:
+			completeFinishedEmergencies(ctx, vet, loc)
 			animal := 5 + rng.Int64N(maxAnimal-200)
 			x := rng.Float64()
 			var action string
@@ -64,11 +65,11 @@ func live(ctx context.Context, apiURL string, seedValue int64, loc *time.Locatio
 				resp, err = reception.Post(ctx, "/api/appointments", map[string]any{
 					"animal_id": animal, "vet_id": v, "room_id": v + 3, "kind": "exam", "starts_at": start, "duration_min": 30,
 					"reason": "Simülatör: kontrol muayenesi"}, key)
-			case x < 0.53:
+			case x < 0.48:
 				action = "emergency"
 				resp, err = vet.Post(ctx, "/api/appointments/emergency", map[string]any{
 					"animal_id": animal, "duration_min": 30, "reason": "Simülatör: acil vaka"}, key)
-			case x < 0.75:
+			case x < 0.72:
 				action = "payment"
 				resp, err = payOpenInvoice(ctx, reception, rng)
 			case x < 0.95:
@@ -107,4 +108,29 @@ func payOpenInvoice(ctx context.Context, c *apiclient.Client, rng *rand.Rand) (a
 	inv := list.Items[rng.IntN(len(list.Items))]
 	return c.Post(ctx, fmt.Sprintf("/api/invoices/%d/payments", inv.ID), map[string]any{"amount_kurus": inv.DueKurus, "method": "card"},
 		apiclient.WithIdempotencyKey(apiclient.NewKey()))
+}
+
+// completeFinishedEmergencies süresi dolmuş acil vakaları tamamlar; gerçek klinikte veterinerin muayeneyi kapatmasıdır.
+// Bu yapılmazsa simülatörün açtığı acil vakalar kaynakları sonsuza dek meşgul ederdi.
+func completeFinishedEmergencies(ctx context.Context, c *apiclient.Client, loc *time.Location) {
+	resp, err := c.Get(ctx, "/api/appointments?date="+time.Now().In(loc).Format(time.DateOnly))
+	if err != nil || resp.Status != http.StatusOK {
+		return
+	}
+	var list struct {
+		Items []struct {
+			ID       int64     `json:"id"`
+			Priority string    `json:"priority"`
+			Status   string    `json:"status"`
+			EndsAt   time.Time `json:"ends_at"`
+		} `json:"items"`
+	}
+	if resp.JSON(&list) != nil {
+		return
+	}
+	for _, a := range list.Items {
+		if a.Priority == "emergency" && a.Status == "checked_in" && a.EndsAt.Before(time.Now()) {
+			_, _ = c.Post(ctx, fmt.Sprintf("/api/appointments/%d/status", a.ID), map[string]string{"status": "completed"})
+		}
+	}
 }
