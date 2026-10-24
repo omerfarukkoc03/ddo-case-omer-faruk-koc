@@ -1,0 +1,20 @@
+# Ortam
+.env
+
+# Go
+*.out
+coverage*.txt
+/backend/bin/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Yük testi çıktıları
+load/results/*.json
+
+# Editör / işletim sistemi
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
