@@ -70,10 +70,24 @@ func TestInProgressAppointmentIsNeverMoved(t *testing.T) {
 	}
 }
 
-func TestNoCapacityWhenEverythingInProgress(t *testing.T) {
-	_, err := PlanEmergency(emergency("10:02",
-		bk(100, 1, 10, "10:00", "10:30", false),
+func TestEmergencyWaitsForEarliestFreeVetWhenAllInProgress(t *testing.T) {
+	// İki veteriner de başlamış muayenede: acil vaka ilk boşalan çifte (10:30) planlanır, kimse taşınmaz.
+	res, err := PlanEmergency(emergency("10:02",
+		bk(100, 1, 10, "10:00", "10:45", false),
 		bk(200, 2, 11, "10:00", "10:30", false),
+	), DefaultConfig(ist))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.VetID != 2 || !res.Start.Equal(at("10:30")) || res.WaitMinutes != 25 || len(res.Moves) != 0 {
+		t.Fatalf("want vet 2 at 10:30 after 25 min wait, got %+v", res)
+	}
+}
+
+func TestNoCapacityBeyondMaximumWait(t *testing.T) {
+	_, err := PlanEmergency(emergency("10:02",
+		bk(100, 1, 10, "10:00", "18:00", false),
+		bk(200, 2, 11, "10:00", "18:00", false),
 	), DefaultConfig(ist))
 	if !errors.Is(err, ErrNoCapacity) {
 		t.Fatalf("want ErrNoCapacity, got %v", err)

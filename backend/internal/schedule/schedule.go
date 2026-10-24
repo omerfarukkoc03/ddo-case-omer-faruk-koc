@@ -81,9 +81,11 @@ type Result struct {
 	Moves     []Move    `json:"moves"`
 	Unplaced  []int64   `json:"unplaced"`
 	TotalCost int       `json:"total_cost"`
+	// WaitMinutes tüm çiftler doluyken acil vakanın ileri atıldığı süredir (normalde 0).
+	WaitMinutes int `json:"wait_minutes"`
 }
 
-var ErrNoCapacity = errors.New("no vet/room pair can take the emergency without moving an in-progress or emergency appointment")
+var ErrNoCapacity = errors.New("no vet/room pair becomes free for the emergency within the maximum wait")
 
 type interval struct{ s, e time.Time }
 
@@ -116,9 +118,27 @@ func ceilTo(t time.Time, step time.Duration) time.Time {
 	return r
 }
 
+// MaxEmergencyWait tüm veteriner/oda çiftleri başlamış ya da başka acil randevularla doluyken acil vakanın en fazla
+// ne kadar ileri atılabileceğidir.
+const MaxEmergencyWait = 4 * time.Hour
+
 // PlanEmergency acil vakayı yerleştirir ve çakışan randevuların yeni yerlerini hesaplar.
+//
+// Öncelik: önce en erken başlangıç, eşit başlangıçta en düşük bozulma. Acil vaka normalde "şimdi" başlar; tüm
+// çiftler taşınamaz randevularla (başlamış muayene, başka acil vaka) doluysa ilk boşalan çifte, en fazla
+// MaxEmergencyWait kadar ileriye planlanır. Bekleme Result.WaitMinutes ile bildirilir.
 func PlanEmergency(p Problem, cfg Config) (Result, error) {
-	start := ceilTo(p.Now, cfg.Step)
+	earliest := ceilTo(p.Now, cfg.Step)
+	for start := earliest; !start.After(earliest.Add(MaxEmergencyWait)); start = start.Add(cfg.Step) {
+		if res, ok := planAt(p, cfg, start); ok {
+			res.WaitMinutes = int(start.Sub(earliest).Minutes())
+			return res, nil
+		}
+	}
+	return Result{}, ErrNoCapacity
+}
+
+func planAt(p Problem, cfg Config, start time.Time) (Result, bool) {
 	end := start.Add(p.Emergency.Duration)
 	vets := append([]int64(nil), p.Vets...)
 	sort.Slice(vets, func(i, j int) bool { return vets[i] < vets[j] })
@@ -158,10 +178,7 @@ func PlanEmergency(p Problem, cfg Config) (Result, error) {
 			}
 		}
 	}
-	if best.TotalCost < 0 {
-		return Result{}, ErrNoCapacity
-	}
-	return best, nil
+	return best, best.TotalCost >= 0
 }
 
 func roomsOfKind(rooms map[int64]string, kind string) []int64 {

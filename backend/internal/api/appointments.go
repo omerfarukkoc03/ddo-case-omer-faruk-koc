@@ -229,6 +229,7 @@ type emergencyResp struct {
 	Moves       []schedule.Move `json:"moves"`
 	Cancelled   []int64         `json:"cancelled_for_manual_rebooking"`
 	TotalCost   int             `json:"disruption_cost"`
+	WaitMinutes int             `json:"wait_minutes"`
 	Explanation string          `json:"explanation"`
 }
 
@@ -347,7 +348,7 @@ func (a *API) createEmergency(w http.ResponseWriter, r *http.Request) error {
 		if resp.Emergency, err = pgx.CollectExactlyOneRow(erows, scanAppt); err != nil {
 			return err
 		}
-		resp.Moves, resp.Cancelled, resp.TotalCost = plan.Moves, plan.Unplaced, plan.TotalCost
+		resp.Moves, resp.Cancelled, resp.TotalCost, resp.WaitMinutes = plan.Moves, plan.Unplaced, plan.TotalCost, plan.WaitMinutes
 		if resp.Moves == nil {
 			resp.Moves = []schedule.Move{}
 		}
@@ -356,6 +357,9 @@ func (a *API) createEmergency(w http.ResponseWriter, r *http.Request) error {
 		}
 		resp.Explanation = fmt.Sprintf("%s / %s seçildi; %d randevu taşındı, %d randevu elle yeniden planlanmalı, toplam bozulma maliyeti %d.",
 			resp.Emergency.VetName, resp.Emergency.RoomName, len(resp.Moves), len(resp.Cancelled), resp.TotalCost)
+		if plan.WaitMinutes > 0 {
+			resp.Explanation += fmt.Sprintf(" Tüm veterinerler başlamış muayene ya da başka acil vakada olduğu için acil vaka %d dk sonra, ilk boşalan çifte planlandı.", plan.WaitMinutes)
+		}
 		return audit.Write(r.Context(), tx, audit.Entry{Action: "appointment.emergency", Entity: "appointment", EntityID: eid, New: resp})
 	})
 	if err != nil {
