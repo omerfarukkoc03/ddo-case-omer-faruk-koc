@@ -1,0 +1,437 @@
+# PatiKlinik — elle deneme koleksiyonu (VS Code "REST Client" eklentisi: humao.rest-client)
+#
+# Kullanım: `make up` ile sistemi başlatın, önce aşağıdaki 6 giriş isteğini çalıştırın ("Send Request").
+# Token'lar sonraki isteklerde {{vet.response.body.access_token}} gibi otomatik kullanılır.
+# Demo hayvanlar: 1 Karamel (yavru köpek, 2 sahip, fatura sorumlusu Ece), 2 Mırnav (kedi, rapeli gecikmiş),
+# 3 Karamel'in mükerrer kaydı (çipsiz), 4 Zeytin (Collie). Demo sahipler: 1 Deniz, 2 Ece, 3 Deniz'in mükerrer kaydı.
+
+@base = http://localhost:8080
+@pw = Demo123!
+
+### ============================ Kimlik ============================
+
+# @name vet
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "vet@patiklinik.test", "password": "{{pw}}"}
+
+###
+# @name tech
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "tekniker@patiklinik.test", "password": "{{pw}}"}
+
+###
+# @name rec
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "resepsiyon@patiklinik.test", "password": "{{pw}}"}
+
+###
+# @name pharm
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "eczane@patiklinik.test", "password": "{{pw}}"}
+
+###
+# @name owner
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "sahip@patiklinik.test", "password": "{{pw}}"}
+
+###
+# @name owner2
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "sahip2@patiklinik.test", "password": "{{pw}}"}
+
+### Yanlış parola → 401 invalid_credentials
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "vet@patiklinik.test", "password": "yanlis"}
+
+### Refresh token rotation (aynı refresh token ikinci kez kullanılırsa 401 ve oturum ailesi iptal)
+POST {{base}}/api/auth/refresh
+Content-Type: application/json
+
+{"refresh_token": "{{vet.response.body.refresh_token}}"}
+
+### Oturumdaki kullanıcı
+GET {{base}}/api/auth/me
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### Sağlık
+GET {{base}}/health
+
+### ============================ Yetki ihlalleri ============================
+
+### Token yok → 401
+GET {{base}}/api/animals
+
+### Sahip ilaç listesine erişemez → 403
+GET {{base}}/api/drugs
+Authorization: Bearer {{owner.response.body.access_token}}
+
+### Ece (sahip2) Deniz'in kedisini göremez → 403
+GET {{base}}/api/animals/2
+Authorization: Bearer {{owner2.response.body.access_token}}
+
+### Resepsiyon reçete yazamaz → 403
+POST {{base}}/api/prescriptions
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{}
+
+### ============================ F-1 Sahip ve hayvan ============================
+
+### Sahip ara (ad öneki ya da telefon), keyset sayfalama
+GET {{base}}/api/owners?q=Deniz&limit=10
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Sahip kaydı
+# @name newOwner
+POST {{base}}/api/owners
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"full_name": "Selin Yıldız", "phone": "05551234567", "email": "selin@example.com"}
+
+### Hayvan kaydı (doğum tarihi bilinmiyor → tahmini yaş), aşı planı otomatik oluşur
+# @name newAnimal
+POST {{base}}/api/animals
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "name": "Sokak Kedisi", "species": "cat", "breed": "mixed", "sex": "female",
+  "estimated_age_months": 3, "weight_kg": "1.4",
+  "owners": [{"owner_id": {{newOwner.response.body.id}}, "is_billing": true}]
+}
+
+### Mikroçiple ara
+GET {{base}}/api/animals?microchip=900002654435761
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Hayvan + sahipler (sahip yalnız kendi hayvanını görür)
+GET {{base}}/api/animals/1
+Authorization: Bearer {{owner.response.body.access_token}}
+
+### Ortak sahip ekle
+POST {{base}}/api/animals/{{newAnimal.response.body.id}}/owners
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"owner_id": 1, "relation": "co_owner"}
+
+### Kilo geçmişi
+GET {{base}}/api/animals/1/weights
+Authorization: Bearer {{owner.response.body.access_token}}
+
+### ============================ F-3 / T-1 Aşı ============================
+
+### Karamel'in aşı takvimi ve motor açıklaması (plans[].planned[].reason)
+# @name karamelVacc
+GET {{base}}/api/animals/1/vaccinations
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### Mırnav: gecikmiş FVRCP rapeli bugüne planlı (overdue: true)
+GET {{base}}/api/animals/2/vaccinations
+Authorization: Bearer {{owner.response.body.access_token}}
+
+### Planlı dozu uygula (doz no'yu yukarıdaki yanıttan seçin); paketten seans düş
+POST {{base}}/api/vaccine-doses/{{karamelVacc.response.body.doses[0].id}}/administer
+Authorization: Bearer {{tech.response.body.access_token}}
+Content-Type: application/json
+Idempotency-Key: asi-uygulama-ornek-0001
+
+{"batch_no": "DHPP-2026-0042", "use_package": true}
+
+### Planı yeniden hesapla (idempotent)
+POST {{base}}/api/animals/1/vaccinations/replan
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### Hatırlatma job'ı (ikinci çalıştırmada created: 0)
+POST {{base}}/api/jobs/reminders/run
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Sahibin hatırlatmaları (e-posta şablonu metniyle)
+GET {{base}}/api/reminders?limit=10
+Authorization: Bearer {{owner.response.body.access_token}}
+
+### ============================ F-2 / T-3 Randevu ============================
+
+### Kaynaklar
+GET {{base}}/api/resources
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Günlük takvim
+GET {{base}}/api/appointments?date=2026-10-26
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Randevu oluştur (aynı veteriner/oda/saat ikinci kez → 409 resource_conflict)
+# @name appt
+POST {{base}}/api/appointments
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+Idempotency-Key: randevu-ornek-0001
+
+{"animal_id": 1, "vet_id": 1, "room_id": 4, "kind": "vaccination", "starts_at": "2026-12-15T10:00:00+03:00", "duration_min": 30}
+
+### Durum: geldi
+POST {{base}}/api/appointments/{{appt.response.body.id}}/status
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"status": "checked_in"}
+
+### Muayene (randevuyu tamamlar, kiloyu günceller)
+POST {{base}}/api/examinations
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"appointment_id": {{appt.response.body.id}}, "animal_id": 1, "weight_kg": "8.1", "temperature_c": "38.7", "findings": "Genel durum iyi, aşıya engel yok", "diagnosis": "Sağlıklı"}
+
+### ACİL VAKA: şimdi başlar, çakışan randevular en az bozulmayla taşınır (moves, disruption_cost)
+POST {{base}}/api/appointments/emergency
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 4, "duration_min": 45, "reason": "Trafik kazası", "room_kind": "exam_room"}
+
+### Muayene geçmişi
+GET {{base}}/api/animals/1/examinations
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### ============================ F-4 / T-2 İlaç ve reçete ============================
+
+### İlaçlar, doz aralıkları, kontrendikasyonlar, stok
+GET {{base}}/api/drugs
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### Kedi + parasetamol → 422 contraindicated (gerekçe olsa bile)
+POST {{base}}/api/dosage/calculate
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 2, "drug_id": 3, "doses_per_day": 1, "duration_days": 1, "override_reason": "denemek için yazılan gerekçe"}
+
+### Collie + ivermektin → 422 contraindicated (MDR1)
+POST {{base}}/api/dosage/calculate
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 4, "drug_id": 4, "doses_per_day": 1, "duration_days": 1}
+
+### Ketamin seyreltme: adım adım hesap (C1·V1 = C2·V2)
+POST {{base}}/api/dosage/calculate
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 4, "drug_id": 5, "mg_per_kg": "5", "doses_per_day": 1, "duration_days": 1, "dilute_to_mg_per_ml": "10"}
+
+### Azami doz aşımı gerekçesiz → 422 max_dose_exceeded
+POST {{base}}/api/prescriptions
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 4, "drug_id": 1, "mg_per_kg": "0.3", "doses_per_day": 1, "duration_days": 3}
+
+### Gerekçeli onayla yazılır (exceeds_max: true, denetim kaydına düşer)
+# @name rx
+POST {{base}}/api/prescriptions
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+Idempotency-Key: recete-ornek-0001
+
+{"animal_id": 4, "drug_id": 1, "mg_per_kg": "0.3", "doses_per_day": 1, "duration_days": 3, "override_reason": "Şiddetli ağrı, uzman konsültasyonu ile"}
+
+### Kiloyu değiştir → eski reçete değişmez (weight_changed_note)
+POST {{base}}/api/animals/4/weights
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"weight_kg": "30.0"}
+
+###
+GET {{base}}/api/prescriptions/{{rx.response.body.id}}
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### Eczane kuyruğu
+GET {{base}}/api/prescriptions?status=active&limit=20
+Authorization: Bearer {{pharm.response.body.access_token}}
+
+### Teslim (FEFO, süresi geçmiş parti kullanılmaz)
+POST {{base}}/api/prescriptions/{{rx.response.body.id}}/dispense
+Authorization: Bearer {{pharm.response.body.access_token}}
+
+### Stok
+GET {{base}}/api/stock
+Authorization: Bearer {{pharm.response.body.access_token}}
+
+### Stok girişi
+POST {{base}}/api/stock/batches
+Authorization: Bearer {{pharm.response.body.access_token}}
+Content-Type: application/json
+
+{"drug_id": 1, "lot_no": "L01-C", "expires_on": "2027-12-31", "quantity": 100}
+
+### ============================ F-5 Yatan hasta ============================
+
+### Kafes panosu (allowed_next: durum makinesinin izin verdiği geçişler)
+GET {{base}}/api/cages
+Authorization: Bearer {{tech.response.body.access_token}}
+
+### Geçersiz geçiş: boş → hazır → 409 cage_invalid_transition
+POST {{base}}/api/cages/10/transition
+Authorization: Bearer {{tech.response.body.access_token}}
+Content-Type: application/json
+
+{"to": "ready"}
+
+### Yatış (kafes verilmezse uygun ilk kafes)
+# @name adm
+POST {{base}}/api/hospitalizations
+Authorization: Bearer {{vet.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 4, "reason": "Travma sonrası gözlem"}
+
+### Not
+POST {{base}}/api/hospitalizations/{{adm.response.body.id}}/notes
+Authorization: Bearer {{tech.response.body.access_token}}
+Content-Type: application/json
+
+{"note": "Sıvı tedavisi başladı"}
+
+### Taburcu → kafes temizliğe geçer
+POST {{base}}/api/hospitalizations/{{adm.response.body.id}}/discharge
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### Temizlik → hazır
+POST {{base}}/api/cages/{{adm.response.body.cage_id}}/transition
+Authorization: Bearer {{tech.response.body.access_token}}
+Content-Type: application/json
+
+{"to": "ready"}
+
+### Aktif yatışlar
+GET {{base}}/api/hospitalizations?status=active
+Authorization: Bearer {{vet.response.body.access_token}}
+
+### ============================ F-6 / T-4 Fatura, tahsilat, paket ============================
+
+### Karamel'e fatura: kural → fatura sorumlusu Ece (owner_id 2, billing_rule: billing_owner)
+# @name inv
+POST {{base}}/api/invoices
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 1, "lines": [{"description": "Muayene ücreti", "quantity": 1, "unit_price_kurus": 75000}, {"description": "Karma aşı", "quantity": 1, "unit_price_kurus": 45000}]}
+
+### Açıkça Deniz'e kes (billing_rule: explicit)
+POST {{base}}/api/invoices
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"animal_id": 1, "owner_id": 1, "lines": [{"description": "Kontrol", "quantity": 1, "unit_price_kurus": 30000}]}
+
+### Kısmi ödeme — aynı Idempotency-Key ile tekrar gönderin: aynı yanıt, Idempotent-Replayed: true, tek ödeme
+POST {{base}}/api/invoices/{{inv.response.body.id}}/payments
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+Idempotency-Key: odeme-ornek-0001
+
+{"amount_kurus": 50000, "method": "card"}
+
+### Fazla ödeme → 422 overpayment
+POST {{base}}/api/invoices/{{inv.response.body.id}}/payments
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"amount_kurus": 999999, "method": "cash"}
+
+### Fatura ayrıntısı
+GET {{base}}/api/invoices/{{inv.response.body.id}}
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Ece kendi faturalarını görür
+GET {{base}}/api/invoices?status=
+Authorization: Bearer {{owner2.response.body.access_token}}
+
+### Paketler ve paket satışı
+GET {{base}}/api/packages
+Authorization: Bearer {{rec.response.body.access_token}}
+
+###
+POST {{base}}/api/package-purchases
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"package_id": 1, "animal_id": 1}
+
+### Karamel'in paketleri (sessions_left)
+GET {{base}}/api/animals/1/packages
+Authorization: Bearer {{owner.response.body.access_token}}
+
+### Fatura sorumlusunu değiştir
+PUT {{base}}/api/animals/1/billing-owner
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"owner_id": 1}
+
+### ============================ T-4 Mükerrer kayıt birleştirme ============================
+
+### Olası mükerrer sahipler (1 ↔ 3 aynı telefon)
+GET {{base}}/api/duplicates/owners
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Olası mükerrer hayvanlar (1 ↔ 3 Karamel)
+GET {{base}}/api/duplicates/animals
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Sahip birleştir: 3 → 1
+# @name mergeOwner
+POST {{base}}/api/merges
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"entity": "owner", "survivor_id": 1, "duplicate_id": 3}
+
+### Geri al (ikinci kez → 409 already_undone)
+POST {{base}}/api/merges/{{mergeOwner.response.body.id}}/undo
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Hayvan birleştir: 3 → 1 (aşı geçmişleri birleşir, plan yeniden hesaplanır)
+# @name mergeAnimal
+POST {{base}}/api/merges
+Authorization: Bearer {{rec.response.body.access_token}}
+Content-Type: application/json
+
+{"entity": "animal", "survivor_id": 1, "duplicate_id": 3}
+
+###
+POST {{base}}/api/merges/{{mergeAnimal.response.body.id}}/undo
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Birleştirme geçmişi
+GET {{base}}/api/merges
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### ============================ Gözlem ============================
+
+### Denetim kaydı (append-only): kim, ne zaman, neyi, eski/yeni değer
+GET {{base}}/api/audit?entity=invoice&limit=20
+Authorization: Bearer {{rec.response.body.access_token}}
+
+### Canlı pano
+GET {{base}}/api/stats/live
+Authorization: Bearer {{vet.response.body.access_token}}
