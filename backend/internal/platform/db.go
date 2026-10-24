@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	pgxdecimal "github.com/jackc/pgx-shopspring-decimal"
@@ -24,7 +26,8 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
-	cfg.MaxConns = 20
+	// Havuz boyutu ortamdan ayarlanabilir; PostgreSQL varsayılan max_connections=100 ile uyumlu kalmalı.
+	cfg.MaxConns = int32(maxConns())
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	// numeric kolonlar shopspring/decimal ile birebir (float'sız) okunup yazılır.
 	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
@@ -112,4 +115,11 @@ func IsRetryable(err error) bool {
 		return pgErr.Code == "40001" || pgErr.Code == "40P01"
 	}
 	return false
+}
+
+func maxConns() int {
+	if n, err := strconv.Atoi(os.Getenv("DB_MAX_CONNS")); err == nil && n > 0 && n <= 90 {
+		return n
+	}
+	return 30
 }

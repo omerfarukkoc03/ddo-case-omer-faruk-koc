@@ -167,8 +167,12 @@ func (a *API) createAppointment(w http.ResponseWriter, r *http.Request) error {
 		if req.Kind == "surgery" {
 			wantRoom = "surgery_room"
 		}
-		// FOR SHARE: acil vaka planlaması (FOR UPDATE) sürerken bu kaynaklara yeni randevu yazılmaz.
-		krows, err := tx.Query(r.Context(), `SELECT id, kind FROM resources WHERE id IN ($1,$2) AND is_active ORDER BY id FOR SHARE`, req.VetID, req.RoomID)
+		// Veteriner ve oda satırları kimlik sırasıyla kilitlenir: aynı kaynağa gelen rezervasyonlar burada kısa süre
+		// sıraya girer, ikincisi birincinin commit edilmiş satırını görüp hemen 409 alır. Kilit olmadan, aynı slota eşzamanlı
+		// iki INSERT EXCLUDE kontrolünde birbirinin commit edilmemiş satırını bekleyip kilitlenir (deadlock, 1 sn tespit
+		// gecikmesi; k6 yük testi gösterdi). NO KEY UPDATE, diğer tabloların yabancı anahtar kontrollerini (KEY SHARE) bloklamaz.
+		// Acil vaka planlaması aynı kilidi tüm kaynaklarda aynı sırayla alır.
+		krows, err := tx.Query(r.Context(), `SELECT id, kind FROM resources WHERE id IN ($1,$2) AND is_active ORDER BY id FOR NO KEY UPDATE`, req.VetID, req.RoomID)
 		if err != nil {
 			return err
 		}
@@ -263,7 +267,7 @@ func (a *API) createEmergency(w http.ResponseWriter, r *http.Request) error {
 	var resp emergencyResp
 	err := pgx.BeginFunc(r.Context(), a.Pool, func(tx pgx.Tx) error {
 		// Tüm aktif kaynaklar kilitlenir: eşzamanlı iki acil vaka planlaması sırayla çalışır.
-		rows, err := tx.Query(r.Context(), `SELECT id, kind FROM resources WHERE is_active ORDER BY id FOR UPDATE`)
+		rows, err := tx.Query(r.Context(), `SELECT id, kind FROM resources WHERE is_active ORDER BY id FOR NO KEY UPDATE`)
 		if err != nil {
 			return err
 		}
