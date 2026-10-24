@@ -3,7 +3,7 @@
 
 COMPOSE := docker compose
 
-.PHONY: help env up down logs ps verify reset-demo load test test-unit lint fe-build clean
+.PHONY: help env up down logs ps verify reset-demo load test test-unit lint fe-build check clean
 
 help: ## Komutları listele
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ lint: ## golangci-lint (Docker ile)
 
 fe-build: ## Frontend tip kontrolü ve derleme
 	cd frontend && npm ci && npm run build
+
+check: lint test-unit ## Push öncesi hızlı kontrol: lint + birim testler + frontend tip kontrolü
+	cd frontend && npm run typecheck
 
 clean: ## Servisleri ve veritabanı hacmini sil
 	$(COMPOSE) down -v

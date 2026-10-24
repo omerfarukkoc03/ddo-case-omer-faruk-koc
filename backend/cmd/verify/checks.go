@@ -21,7 +21,6 @@ type call struct {
 }
 
 func do(r apiclient.Response, err error) call { return call{r, err} }
-func ok(r apiclient.Response) call            { return call{r: r} }
 
 func expect(c call, status int, what string) (apiclient.Response, error) {
 	if c.err != nil {
@@ -108,11 +107,6 @@ func (e *env) ownerWithDog(weight string) (ownerID int64, a animalResp, err erro
 	a, err = e.newAnimal(animalOpts{species: "dog", breed: "Labrador", birth: &birth, weight: weight, chip: true,
 		owners: []map[string]any{{"owner_id": ownerID, "is_billing": true}}})
 	return
-}
-
-func (e *env) today() time.Time {
-	y, m, d := time.Now().In(e.loc).Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // freeSlot uzak bir gelecekte rastgele bir mesai slotu seçer; simülatörün ve önceki çalıştırmaların randevularıyla
@@ -436,8 +430,10 @@ func checkHospital(e *env) error {
 		}
 		return "", fmt.Errorf("kafes %d bulunamadı", id)
 	}
-	if s, err := stateOf(adm.CageID); err != nil || s != "occupied" {
-		return fmt.Errorf("yatıştan sonra kafes %q (%v)", s, err)
+	if s, err := stateOf(adm.CageID); err != nil {
+		return err
+	} else if s != "occupied" {
+		return fmt.Errorf("yatıştan sonra kafes %q, beklenen occupied", s)
 	}
 	if err := expectCode(do(e.vet.Post(e.ctx, "/api/hospitalizations", map[string]any{"animal_id": a.ID, "reason": "ikinci yatış"})),
 		http.StatusConflict, "duplicate", "aynı hayvanın ikinci aktif yatışı"); err != nil {
@@ -449,8 +445,10 @@ func checkHospital(e *env) error {
 	if _, err := expect(do(e.vet.Post(e.ctx, fmt.Sprintf("/api/hospitalizations/%d/discharge", adm.ID), nil)), http.StatusOK, "taburcu"); err != nil {
 		return err
 	}
-	if s, err := stateOf(adm.CageID); err != nil || s != "cleaning" {
-		return fmt.Errorf("taburcudan sonra kafes %q, beklenen cleaning (%v)", s, err)
+	if s, err := stateOf(adm.CageID); err != nil {
+		return err
+	} else if s != "cleaning" {
+		return fmt.Errorf("taburcudan sonra kafes %q, beklenen cleaning", s)
 	}
 	_, err = expect(do(e.tech.Post(e.ctx, fmt.Sprintf("/api/cages/%d/transition", adm.CageID), map[string]string{"to": "ready"})), http.StatusOK, "temizlik → hazır")
 	return err
@@ -928,14 +926,18 @@ func checkOwnershipMerge(e *env) error {
 		}
 		return ids, err
 	}
-	if ids, err := ownersOf(dupPet.ID); err != nil || len(ids) != 1 || ids[0] != primary {
-		return fmt.Errorf("birleştirme sonrası hayvan sahipleri %v (%v), beklenen [%d]", ids, err, primary)
+	if ids, err := ownersOf(dupPet.ID); err != nil {
+		return err
+	} else if len(ids) != 1 || ids[0] != primary {
+		return fmt.Errorf("birleştirme sonrası hayvan sahipleri %v, beklenen [%d]", ids, primary)
 	}
 	if _, err := expect(do(e.reception.Post(e.ctx, fmt.Sprintf("/api/merges/%d/undo", op.ID), nil)), http.StatusOK, "geri alma"); err != nil {
 		return err
 	}
-	if ids, err := ownersOf(dupPet.ID); err != nil || len(ids) != 1 || ids[0] != dup {
-		return fmt.Errorf("geri alma sonrası hayvan sahipleri %v (%v), beklenen [%d]", ids, err, dup)
+	if ids, err := ownersOf(dupPet.ID); err != nil {
+		return err
+	} else if len(ids) != 1 || ids[0] != dup {
+		return fmt.Errorf("geri alma sonrası hayvan sahipleri %v, beklenen [%d]", ids, dup)
 	}
 	return expectCode((do(e.reception.Post(e.ctx, fmt.Sprintf("/api/merges/%d/undo", op.ID), nil))), http.StatusConflict, "already_undone", "ikinci geri alma")
 }

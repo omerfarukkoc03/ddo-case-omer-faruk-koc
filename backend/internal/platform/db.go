@@ -27,7 +27,7 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
 	// Havuz boyutu ortamdan ayarlanabilir; PostgreSQL varsayılan max_connections=100 ile uyumlu kalmalı.
-	cfg.MaxConns = int32(maxConns())
+	cfg.MaxConns = maxConns()
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	// numeric kolonlar shopspring/decimal ile birebir (float'sız) okunup yazılır.
 	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
@@ -117,9 +117,9 @@ func IsRetryable(err error) bool {
 	return false
 }
 
-func maxConns() int {
-	if n, err := strconv.Atoi(os.Getenv("DB_MAX_CONNS")); err == nil && n > 0 && n <= 90 {
-		return n
+func maxConns() int32 {
+	if n, err := strconv.ParseInt(os.Getenv("DB_MAX_CONNS"), 10, 32); err == nil && n > 0 && n <= 90 {
+		return int32(n)
 	}
 	return 30
 }
