@@ -1,0 +1,114 @@
+name: patiklinik
+
+x-db-url: &db-url postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Host'a port açılmaz; yalnız compose ağındaki servisler erişir.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      target: api
+    environment:
+      DATABASE_URL: *db-url
+      JWT_SECRET: ${JWT_SECRET}
+      TZ_CLINIC: ${TZ_CLINIC:-Europe/Istanbul}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REMINDER_JOB_INTERVAL: ${REMINDER_JOB_INTERVAL:-10m}
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+    read_only: true
+    restart: unless-stopped
+
+  simulator:
+    build:
+      context: ./backend
+      target: simulator
+    environment:
+      DATABASE_URL: *db-url
+      API_URL: http://api:8080
+      SEED: ${SEED:-42}
+      SIM_ANIMALS: ${SIM_ANIMALS:-15000}
+      SIM_OWNERS: ${SIM_OWNERS:-10000}
+      SIM_INTERVAL_MS: ${SIM_INTERVAL_MS:-4000}
+      TZ_CLINIC: ${TZ_CLINIC:-Europe/Istanbul}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/simulator", "healthcheck"]
+      interval: 3s
+      timeout: 5s
+      retries: 100
+      start_period: 10s
+    read_only: true
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  verify:
+    profiles: ["verify"]
+    build:
+      context: ./backend
+      target: verify
+    environment:
+      API_URL: http://api:8080
+      FRONTEND_URL: http://frontend:3000
+      TZ_CLINIC: ${TZ_CLINIC:-Europe/Istanbul}
+    depends_on:
+      simulator:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+
+  k6:
+    profiles: ["load"]
+    image: grafana/k6:0.54.0
+    environment:
+      API_URL: http://api:8080
+    volumes:
+      - ./load:/scripts:ro
+    command: ["run", "--summary-export=/scripts/results/summary.json", "/scripts/load.js"]
+    depends_on:
+      simulator:
+        condition: service_healthy
+
+volumes:
+  pgdata:
