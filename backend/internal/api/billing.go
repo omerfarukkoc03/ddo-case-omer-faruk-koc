@@ -153,7 +153,7 @@ func insertInvoice(r *http.Request, tx pgx.Tx, animalID, ownerID int64, rule str
 	var invID int64
 	if err := tx.QueryRow(r.Context(), `
 		INSERT INTO invoices (animal_id, owner_id, billing_rule, total_kurus, created_by, status)
-		VALUES ($1,$2,$3,$4,$5, CASE WHEN $4 = 0 THEN 'paid' ELSE 'open' END) RETURNING id`,
+		VALUES ($1,$2,$3,$4::bigint,$5, CASE WHEN $4::bigint = 0 THEN 'paid' ELSE 'open' END) RETURNING id`,
 		animalID, ownerID, rule, total, principal(r).UserID).Scan(&invID); err != nil {
 		return 0, err
 	}
