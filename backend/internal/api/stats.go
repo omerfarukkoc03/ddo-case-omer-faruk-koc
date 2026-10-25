@@ -121,6 +121,9 @@ func (a *API) liveStats(w http.ResponseWriter, r *http.Request) error {
 //go:embed openapi.yaml
 var openapiSpec []byte
 
+// OpenAPISpec gömülü OpenAPI belgesini döndürür (testler rol matrisini buradan okur).
+func OpenAPISpec() []byte { return openapiSpec }
+
 func serveOpenAPI(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	_, _ = w.Write(openapiSpec)
