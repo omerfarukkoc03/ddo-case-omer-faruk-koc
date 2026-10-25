@@ -11,7 +11,7 @@ Docker Compose ile ayağa kalkar.
 | | |
 |---|---|
 | Hızlı doğrulama | `make verify` → 15/15 PASS, ~5 sn ([TESTING.md](TESTING.md)) |
-| Testler | 58 otomatik test: 40 birim + 18 gerçek PostgreSQL ile entegrasyon. Çekirdek motorlarda kapsam %93–95 |
+| Testler | 60 Go testi (40 birim + 20 gerçek PostgreSQL ile entegrasyon) ve 17 Playwright arayüz testi. Çekirdek motorlarda kapsam %93–95 |
 | Mimari kararlar | [DECISIONS.md](DECISIONS.md) (7 karar kaydı) |
 | API dokümantasyonu | http://localhost:8080/docs (OpenAPI 3: `backend/internal/api/openapi.yaml`), [requests.http](requests.http) |
 | Yük testi | `make load` → [load/RESULTS.md](load/RESULTS.md) |
@@ -278,12 +278,27 @@ arama için faydalı. Mükerrer sayımı ise ölçek büyüdükçe önbelleğe a
 ## Test, CI ve yük testi
 
 - **Birim testler (40):** aşı motoru 13, doz 12, planlama 10, kafes FSM 2, seed determinizmi 2, OpenAPI–rota kapsamı 1.
-- **Entegrasyon testleri (18):** testcontainers ile açılan gerçek PostgreSQL 16 üzerinde, HTTP'den veritabanına.
+- **Entegrasyon testleri (20):** testcontainers ile açılan gerçek PostgreSQL 16 üzerinde, HTTP'den veritabanına.
   Yarış durumları gerçek eşzamanlı isteklerle kanıtlanıyor: 20 rezervasyondan 1'i, 10 ödemeden 1'i kabul ediliyor;
   sınırlı stokta tam hesaplanan sayıda teslim yapılıyor; 20 koşullu düşümden tam 5'i başarılı oluyor; 5 eşzamanlı job
   çalıştırması yinelenen hatırlatma üretmiyor.
+- **Uç nokta taraması (2 entegrasyon testi):**
+  - *Rol matrisi:* Router'daki her uç nokta 5 rolle ve token'sız çağrılır (255 birleşim). Sonuç, OpenAPI'deki
+    `Roller:` satırıyla birebir karşılaştırılır. Bu, hem her uç noktada sunucu tarafı yetki kontrolü olduğunu hem de
+    belgenin doğru olduğunu kanıtlar. Kasıtlı yanlış bir rol yazılarak test edildi (mutasyon testi).
+  - *Bozuk girdi:* Her uç noktaya bozuk JSON, yanlış tipler, 5.000 karakterlik metinler, sınır dışı ve var olmayan
+    kimlikler gönderilir. Hiçbiri 5xx üretmez, tüm hatalar ortak biçimdedir.
+- **Arayüz testleri (17, Playwright, gerçek Chromium):**
+  - 5 rolün menüdeki tüm sayfaları
+  - yetkisiz sayfa yönlendirmesi
+  - doz hesabı, acil vaka, kafes, fatura, portal daveti ve etkinleştirme, birleştirme ve geri alma akışları
+  - mobil genişlikte yatay taşma kontrolü
+
+  Her testte tarayıcı konsol hataları ve 5xx yanıtlar otomatik olarak başarısızlık sayılır (`make e2e`).
+  Bu testler yazılırken iki gerçek arayüz hatası bulundu: çıkıştan sonra sonraki kullanıcının öncekinin sayfasına
+  düşmesi ve ameliyat seçilince oda listesinin değişip seçili odanın eski kalması.
 - **GitHub Actions:** `golangci-lint` (errcheck, staticcheck, gosec, errorlint, bodyclose…), `go test -race` (birim +
-  entegrasyon), frontend tip kontrolü ve derlemesi, tüm compose imajlarının derlenmesi.
+  entegrasyon), frontend tip kontrolü ve derlemesi, tüm compose imajlarının derlenmesi. Ayrıca tam sistemin `docker compose up` ile ayağa kaldırılıp `make verify` ve Playwright testlerinin çalıştırılması; hata durumunda ekran görüntüleri yapıt olarak saklanır.
 - **`make verify`:** 15 kimlik, ~5 sn ([TESTING.md](TESTING.md)).
 - **`make load`:** Rezervasyon çekişmesi, doz hesabı ve aşı planı eşzamanlı çalışır. İlk çalıştırma EXCLUDE
   eklemelerinde deadlock'ları ortaya çıkardı. Düzeltme sonrası:

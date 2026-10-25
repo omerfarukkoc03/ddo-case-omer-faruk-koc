@@ -45,6 +45,7 @@ Diğer komutlar:
 | `make test-unit` | Yalnız birim testleri (Docker gerekmez). |
 | `make load` | k6 yük testi, ~40 sn. Sonuçlar ve yorumu: `load/RESULTS.md`. |
 | `make lint` | golangci-lint. |
+| `make e2e` | Playwright arayüz testleri (çalışan sisteme gerçek Chromium ile; ekran görüntüleri `e2e/screenshots/`). |
 
 ## (a) Demo hesapları
 
@@ -136,4 +137,6 @@ PostgreSQL 16 açar).
 | **T-4** | `cd backend && go test -tags integration -count=1 -v -run 'TestBillingOwnerRule\|TestOwnerMergeAndUndoRestoresState\|TestAnimalMergeCombinesHistoryAndUndo\|TestPackageSessionDeductionIsConsistent\|TestIdempotencyKeyReplaysSameResult\|TestConcurrentPaymentsNeverOverpay' ./internal/api/` | Fatura kuralının üç dalı; birleştirme + geri almadan sonra ilgili satırlar birebir eski hali; hayvan birleştirmede aşı geçmişi birleşir ve geri ayrılır; 20 eşzamanlı koşullu düşümde 5 seansın tam 5'i düşülür, seans bitince işlem geri alınır; idempotent tekrar; eşzamanlı ödemede fazla tahsilat yok. |
 | **Portal** | `cd backend && go test -tags integration -count=1 -v -run TestOwnerPortalInviteAndActivation ./internal/api/` | Yalnız resepsiyon davet üretir; kod idempotency önbelleğine ve denetim kaydına sızmaz; zayıf parola, yanlış e-posta, yanlış kod, iptal edilmiş ve süresi dolmuş davet reddedilir; kod tek kullanımlık ve büyük/küçük harf ile tireden bağımsız; yeni sahip yalnız kendi hayvanını görür. |
 | **Seed** | `cd backend && go test -v -count=1 -run TestGenerate ./internal/seed/` | Aynı tohum → aynı SHA-256 özeti; farklı tohum → farklı özet; tekil mikroçip, çakışmasız seed randevuları, fazla tahsil edilmemiş faturalar. |
-| **Hepsi** | `make test` | 58 test (40 birim + 18 entegrasyon). CI'da `-race` ile çalışır. |
+| **Yetki ve sağlamlık** | `cd backend && go test -tags integration -count=1 -v -run 'TestEveryEndpointEnforcesDocumentedRoles\|TestMalformedInputNeverCausesServerError' ./internal/api/` | Her uç nokta × her rol (255 birleşim) OpenAPI'deki rol listesiyle birebir uyumlu, token'sız istek 401; bozuk JSON, yanlış tip, aşırı uzun metin, var olmayan kimlik hiçbir uç noktada 5xx üretmiyor. |
+| **Arayüz** | `make e2e` | 17 Playwright testi: rol bazlı tüm sayfalar, yetkisiz sayfa yönlendirmesi, doz/acil vaka/kafes/fatura/portal/birleştirme akışları, mobil taşma; konsol hatası ve 5xx otomatik başarısızlık. |
+| **Hepsi** | `make test` | 60 Go testi (40 birim + 20 entegrasyon). CI'da `-race` ile çalışır; CI ayrıca tam sistemde `make verify` ve Playwright testlerini çalıştırır. |
