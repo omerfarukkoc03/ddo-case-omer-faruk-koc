@@ -72,3 +72,52 @@ jobs:
         run: cp .env.example .env
       - name: docker compose build
         run: docker compose build
+
+  e2e:
+    name: E2E (tam sistem + make verify + Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sistemi başlat (docker compose up --build)
+        run: |
+          cp .env.example .env
+          docker compose up --build -d
+      - name: Servislerin sağlıklı olmasını bekle (seed dahil)
+        run: |
+          for i in $(seq 1 150); do
+            ok=0
+            for s in api simulator frontend; do
+              [ "$(docker inspect -f '{{.State.Health.Status}}' patiklinik-$s-1 2>/dev/null)" = healthy ] && ok=$((ok+1))
+            done
+            [ $ok -eq 3 ] && echo "hazır: $((i*2)) sn" && exit 0
+            sleep 2
+          done
+          docker compose ps; exit 1
+      - name: make verify
+        run: docker compose --profile verify run --rm --build verify
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Playwright
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          mkdir -p screenshots
+          npx playwright test
+      - name: Ekran görüntüleri ve rapor
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/report
+            e2e/screenshots
+            e2e/test-results
+          retention-days: 7
+      - name: Hata durumunda servis logları
+        if: failure()
+        run: docker compose logs --tail=200

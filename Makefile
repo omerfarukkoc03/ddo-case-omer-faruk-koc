@@ -3,7 +3,7 @@
 
 COMPOSE := docker compose
 
-.PHONY: help env up down logs ps verify reset-demo load test test-unit lint fe-build check clean
+.PHONY: help env up down logs ps verify reset-demo load test test-unit lint fe-build check e2e clean
 
 help: ## Komutları listele
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,9 @@ fe-build: ## Frontend tip kontrolü ve derleme
 
 check: lint test-unit ## Push öncesi hızlı kontrol: lint + birim testler + frontend tip kontrolü
 	cd frontend && npm run typecheck
+
+e2e: ## Arayüz uçtan uca testleri (Playwright; sistem make up ile çalışıyor olmalı)
+	cd e2e && npm ci --no-audit --no-fund && npx playwright install chromium && npx playwright test
 
 clean: ## Servisleri ve veritabanı hacmini sil
 	$(COMPOSE) down -v

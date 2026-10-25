@@ -18,3 +18,9 @@ load/results/*.json
 .idea/
 .DS_Store
 Thumbs.db
+
+# Uçtan uca testler
+e2e/node_modules/
+e2e/screenshots/
+e2e/report/
+e2e/test-results/
