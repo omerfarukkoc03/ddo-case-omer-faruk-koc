@@ -16,11 +16,27 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "activate">("login");
   return (
     <div className="login">
-      <div className="card">
-        <div className="brand" style={{ padding: 0, marginBottom: 4 }}>🐾 PatiKlinik</div>
-        <p className="muted" style={{ marginTop: 0 }}>Veteriner klinik hasta, aşı ve randevu sistemi</p>
-        {mode === "login" ? <LoginForm onActivate={() => setMode("activate")} /> : <ActivateForm onBack={() => setMode("login")} />}
-      </div>
+      <section className="login-hero">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden>🐾</span>
+          <span>PatiKlinik</span>
+        </div>
+        <div>
+          <h1>Kliniğinizin hasta, aşı ve randevu yönetimi tek yerde.</h1>
+          <p>Hayvan kaydından faturaya kadar tüm süreçler; kritik kurallar hem uygulamada hem veritabanında korunur.</p>
+        </div>
+        <ul>
+          <li><span aria-hidden>💉</span><span><strong>Aşı takvimi motoru</strong><br />Gecikmeleri asgari aralıkla yeniden planlar, hatırlatır.</span></li>
+          <li><span aria-hidden>💊</span><span><strong>Güvenli doz hesabı</strong><br />Adım adım açıklama, kontrendikasyon ve sınır kontrolü.</span></li>
+          <li><span aria-hidden>🚨</span><span><strong>Acil vaka planlama</strong><br />Çakışan randevuları en az bozulmayla taşır.</span></li>
+          <li><span aria-hidden>🔀</span><span><strong>Geri alınabilir birleştirme</strong><br />Mükerrer kayıtlar veri kaybetmeden birleşir.</span></li>
+        </ul>
+      </section>
+      <section className="login-panel">
+        <div className="card">
+          {mode === "login" ? <LoginForm onActivate={() => setMode("activate")} /> : <ActivateForm onBack={() => setMode("login")} />}
+        </div>
+      </section>
     </div>
   );
 }
@@ -46,6 +62,8 @@ function LoginForm({ onActivate }: { onActivate: () => void }) {
 
   return (
     <>
+      <h2 style={{ fontSize: "1.3rem", marginBottom: 4 }}>Giriş yap</h2>
+      <p className="muted small" style={{ marginTop: 0, marginBottom: 18 }}>Klinik personeli ve hayvan sahipleri için.</p>
       <form className="form" onSubmit={submit}>
         <Field label="E-posta">
           <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -58,14 +76,11 @@ function LoginForm({ onActivate }: { onActivate: () => void }) {
       </form>
       <p className="small" style={{ marginBottom: 0 }}>
         Hayvan sahibi misiniz ve klinikten etkinleştirme kodu aldınız mı?{" "}
-        <button className="btn btn-ghost btn-sm" style={{ color: "var(--brand)", padding: 0 }} onClick={onActivate}>
+        <button className="btn-link" onClick={onActivate}>
           Hesabımı etkinleştir →
         </button>
       </p>
-      <hr style={{ border: 0, borderTop: "1px solid var(--border)", margin: "16px 0" }} />
-      <p className="small muted" style={{ marginTop: 0 }}>
-        Demo hesapları (parola <code>{DEMO_PASSWORD}</code>):
-      </p>
+      <div className="divider">Demo hesapları · parola <code>{DEMO_PASSWORD}</code></div>
       <div className="demo-accounts">
         {DEMO.map((d) => (
           <button key={d.email} className="btn btn-sm" disabled={busy} onClick={() => submit(undefined, { email: d.email, password: DEMO_PASSWORD })}>

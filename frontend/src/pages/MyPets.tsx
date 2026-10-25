@@ -10,7 +10,7 @@ export default function MyPets() {
   const list = useQuery({ queryKey: ["my-animals"], queryFn: () => api<List<Animal>>("/api/animals?limit=50") });
   const [sel, setSel] = useState<number | null>(null);
   return (
-    <Page title="Sağlık karnesi">
+    <Page title="Sağlık karnesi" subtitle="Hayvanlarınızın aşı takvimi, kilo gelişimi, muayeneleri ve aşı paketleri.">
       <Query q={list} isEmpty={(d) => d.items.length === 0} empty="Kayıtlı hayvanınız yok.">
         {(d) => {
           const id = sel ?? d.items[0].id;

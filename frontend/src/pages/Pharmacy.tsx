@@ -18,7 +18,7 @@ interface Batch {
 export default function Pharmacy() {
   const isPharmacy = useHasRole("pharmacy");
   return (
-    <Page title="Eczane ve stok">
+    <Page title="Eczane ve stok" subtitle="Reçeteler son kullanma tarihi en yakın partiden (FEFO) teslim edilir; süresi geçmiş parti kullanılmaz.">
       <div className="stack">
         <Queue canDispense={isPharmacy} />
         <Stock />

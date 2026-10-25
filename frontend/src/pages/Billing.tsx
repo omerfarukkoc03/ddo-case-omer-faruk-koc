@@ -43,7 +43,7 @@ export default function Billing() {
                     <thead><tr><th>#</th><th>Hasta / sahip</th><th>Durum</th><th className="num">Kalan</th></tr></thead>
                     <tbody>
                       {items.map((i) => (
-                        <tr key={i.id} className="clickable" onClick={() => setSelected(i.id)}>
+                        <tr key={i.id} className={`clickable ${selected === i.id ? "selected" : ""}`} onClick={() => setSelected(i.id)}>
                           <td className="muted">{i.id}</td>
                           <td>{i.animal_name} <div className="small muted">{i.owner_name}</div></td>
                           <td><Badge value={i.status} /></td>
@@ -94,7 +94,7 @@ function InvoiceDetail({ id, canPay }: { id: number; canPay: boolean }) {
                 ))}
                 <tr><td><strong>Toplam</strong></td><td className="num"><strong>{money(i.total_kurus)}</strong></td></tr>
                 {i.payments?.map((p) => (
-                  <tr key={p.id}><td className="muted">Ödeme · {p.method} · {dateTime(p.created_at)}</td><td className="num">−{money(p.amount_kurus)}</td></tr>
+                  <tr key={p.id}><td className="muted">Ödeme · {label(p.method)} · {dateTime(p.created_at)}</td><td className="num">−{money(p.amount_kurus)}</td></tr>
                 ))}
                 <tr><td><strong>Kalan</strong></td><td className="num"><strong>{money(i.due_kurus)}</strong></td></tr>
               </tbody>

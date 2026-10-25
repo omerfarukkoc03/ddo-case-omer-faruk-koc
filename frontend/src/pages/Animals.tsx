@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api, date, speciesLabel, type List } from "../api";
 import { useHasRole } from "../auth";
 import type { Animal, Owner } from "../types";
-import { Card, ErrorBox, Field, Loading, Page, SuccessBox, Toggle } from "../ui";
+import { Card, ErrorBox, Field, Loading, Page, SuccessBox, Toggle, breedLabel } from "../ui";
 
 export default function Animals() {
   const [q, setQ] = useState("");
@@ -23,7 +23,7 @@ export default function Animals() {
   const items = list.data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
-    <Page title="Hasta kayıtları">
+    <Page title="Hasta kayıtları" subtitle="Ad ya da 15 haneli mikroçip numarasıyla arayın; yeni sahip ve hayvan kaydı aşı planını otomatik oluşturur.">
       <div className="stack">
         {isReception && (
           <div className="grid grid-2">
@@ -63,7 +63,7 @@ export default function Animals() {
                       <tr key={a.id} className="clickable" onClick={() => nav(`/animals/${a.id}`)}>
                         <td className="muted">{a.id}</td>
                         <td><strong>{a.name}</strong></td>
-                        <td>{speciesLabel[a.species]} · {a.breed}</td>
+                        <td>{speciesLabel[a.species]} <span className="sub-line">{breedLabel(a.breed)}</span></td>
                         <td className="mono">{a.microchip ?? <span className="muted">çipsiz</span>}</td>
                         <td>{date(a.birth_date)}{a.birth_date_estimated && <span className="muted small"> (tahmini)</span>}</td>
                         <td className="num">{a.weight_kg ? `${a.weight_kg} kg` : "—"}</td>

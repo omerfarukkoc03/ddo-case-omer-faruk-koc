@@ -31,7 +31,7 @@ export default function Merge() {
   });
   const undo = useMutation({ mutationFn: (id: number) => api<MergeOp>(`/api/merges/${id}/undo`, { method: "POST" }), onSuccess: refresh });
   return (
-    <Page title="Mükerrer kayıtlar">
+    <Page title="Mükerrer kayıtlar" subtitle="Aynı telefonlu sahipler ve aynı ad/türdeki hayvanlar önerilir. Birleştirmede kayıt silinmez; her birleştirme geri alınabilir.">
       <div className="stack">
         <p className="small muted" style={{ margin: 0 }}>
           Birleştirmede hiçbir kayıt silinmez: mükerrer kayda bağlı satırlar hayatta kalan kayda taşınır ve taşınan her satır anlık

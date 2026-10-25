@@ -22,12 +22,9 @@ export default function Hospital() {
   });
 
   return (
-    <Page title="Yatan hasta ve kafesler">
+    <Page title="Yatan hasta ve kafesler" subtitle="Kafes durum makinesi: boş → dolu → temizlik → hazır → dolu. Geçersiz geçişler sunucuda (uygulama + veritabanı tetikleyicisi) reddedilir.">
       <div className="stack">
         {isVet && <AdmitForm onDone={refresh} />}
-        <p className="small muted" style={{ margin: 0 }}>
-          Kafes durum makinesi: boş → dolu → temizlik → hazır → dolu. Geçersiz geçişler sunucuda (uygulama + veritabanı tetikleyicisi) reddedilir.
-        </p>
         <ErrorBox error={transition.error ?? discharge.error} />
         <Query q={cages} isEmpty={(d) => d.items.length === 0} empty="Kafes tanımlı değil.">
           {(d) => (

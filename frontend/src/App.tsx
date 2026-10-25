@@ -1,8 +1,9 @@
 import { useState, type ReactElement } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { logout, roleLabel, type Role } from "./api";
 import { useUser } from "./auth";
+import { initials } from "./ui";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Animals from "./pages/Animals";
@@ -49,6 +50,7 @@ export default function App() {
   const qc = useQueryClient();
   const [menu, setMenu] = useState(false);
   const loc = useLocation();
+  const navigate = useNavigate();
   if (!user) return <Login />;
   const pages = PAGES.filter((p) => p.roles.includes(user.role));
   const home = user.role === "owner" ? "/my" : "/";
@@ -57,27 +59,39 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <button className="btn btn-sm" onClick={() => setMenu(!menu)} aria-label="Menü">☰</button>
-        <strong>🐾 PatiKlinik</strong>
-        <span className="small muted">{roleLabel[user.role]}</span>
+        <strong className="row" style={{ gap: 6 }}><span aria-hidden>🐾</span> PatiKlinik</strong>
+        <span className="avatar" title={`${user.name} · ${roleLabel[user.role]}`}>{initials(user.name)}</span>
       </div>
-      <aside className={`sidebar ${menu ? "open" : ""}`} onClick={() => setMenu(false)}>
-        <div className="brand">🐾 PatiKlinik</div>
+      <div className={`scrim ${menu ? "open" : ""}`} onClick={() => setMenu(false)} />
+      <aside className={`sidebar ${menu ? "open" : ""}`} onClick={(e) => (e.target as HTMLElement).closest("a") && setMenu(false)}>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden>🐾</span>
+          <span>PatiKlinik<small>Veteriner klinik sistemi</small></span>
+        </div>
+        <div className="nav-title">Menü</div>
         <nav className="nav">
           {pages.filter((p) => p.nav).map((p) => (
             <NavLink key={p.path} to={p.path} end={p.path === "/"}>
-              <span aria-hidden>{p.nav!.icon}</span> {p.nav!.label}
+              <span className="ico" aria-hidden>{p.nav!.icon}</span> {p.nav!.label}
             </NavLink>
           ))}
         </nav>
         <div className="userbox">
-          <div><strong>{user.name}</strong></div>
-          <div className="role">{roleLabel[user.role]}</div>
+          <div className="who">
+            <span className="avatar" aria-hidden>{initials(user.name)}</span>
+            <div style={{ minWidth: 0 }}>
+              <div className="name">{user.name}</div>
+              <span className="badge badge-muted">{roleLabel[user.role]}</span>
+            </div>
+          </div>
           <button
             className="btn btn-sm"
-            style={{ marginTop: 8 }}
+            style={{ marginTop: 10, width: "100%" }}
             onClick={async () => {
               await logout();
               qc.clear();
+              // Sonraki kullanıcı, öncekinin açık bıraktığı sayfaya değil kendi ana sayfasına girsin.
+              navigate("/", { replace: true });
             }}
           >
             Çıkış yap

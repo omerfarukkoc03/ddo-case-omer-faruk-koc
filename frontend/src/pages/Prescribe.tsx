@@ -32,7 +32,7 @@ export default function Prescribe() {
   const needsOverride = calc.error instanceof ApiError && calc.error.code === "max_dose_exceeded";
 
   return (
-    <Page title="Reçete ve doz hesabı">
+    <Page title="Reçete ve doz hesabı" subtitle="Doz kilo ve türe göre sunucuda decimal aritmetikle hesaplanır; kontrendikasyonlar kesin engeldir, azami doz yalnız gerekçeyle aşılır.">
       <div className="grid grid-2">
         <Card title="Girdi">
           <form className="form" onSubmit={(e) => { e.preventDefault(); calc.mutate(); }}>
@@ -84,22 +84,22 @@ export default function Prescribe() {
           {needsOverride && <p className="small muted">Doz azami sınırı aşıyor. Gerekçe yazarak yeniden hesaplayabilirsiniz; 2 kat üstü hiçbir koşulda yazılamaz.</p>}
           {calc.data && (
             <div className="stack">
+              <div className="summary">
+                <div><b>{calc.data.dose_mg} mg</b>tek doz</div>
+                {calc.data.volume_ml && <div><b>{calc.data.volume_ml} mL</b>uygulanacak hacim</div>}
+                {calc.data.tablets && <div><b>{calc.data.tablets} tablet</b>doz başına</div>}
+                <div><b>{calc.data.dispense_quantity} {calc.data.dispense_unit === "ml" ? "mL" : "tablet"}</b>eczaneden teslim</div>
+              </div>
               <ol className="steps">
                 {calc.data.steps.map((s, i) => (
-                  <li key={i}>
+                  <li key={i} className={s.result === "AŞILDI" ? "alert" : ""}>
                     <span className="n">{i + 1}</span>
                     <span><strong>{s.label}</strong><div className="formula">{s.formula}</div></span>
                     <span className="result">{s.result}</span>
                   </li>
                 ))}
               </ol>
-              {calc.data.warnings.map((w) => <div key={w} className="state state-error">{w}</div>)}
-              <div className="row">
-                <Badge value="info" text={`Doz: ${calc.data.dose_mg} mg`} />
-                {calc.data.volume_ml && <Badge value="info" text={`${calc.data.volume_ml} mL`} />}
-                {calc.data.tablets && <Badge value="info" text={`${calc.data.tablets} tablet`} />}
-                <Badge value="muted" text={`Teslim: ${calc.data.dispense_quantity} ${calc.data.dispense_unit}`} />
-              </div>
+              {calc.data.warnings.map((w) => <div key={w} className="state state-warn" role="status">⚠️ {w}</div>)}
             </div>
           )}
           <ErrorBox error={save.error} />

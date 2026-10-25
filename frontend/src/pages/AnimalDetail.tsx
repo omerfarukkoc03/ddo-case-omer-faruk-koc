@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, date, dateTime, speciesLabel } from "../api";
 import { useHasRole } from "../auth";
 import type { Animal, AnimalOwner, Prescription, Vaccinations } from "../types";
-import { Badge, Card, ErrorBox, Field, Page, Query, WeightChart } from "../ui";
+import { Badge, Card, ErrorBox, Field, Page, Query, WeightChart, ageText, breedLabel, label } from "../ui";
 
 export default function AnimalDetail() {
   const id = Number(useParams().id);
@@ -12,7 +12,7 @@ export default function AnimalDetail() {
   return (
     <Query q={animal}>
       {(a) => (
-        <Page title={`${a.name} · ${speciesLabel[a.species]}`}>
+        <Page title={`${a.name} · ${speciesLabel[a.species]}`} subtitle={`${breedLabel(a.breed)} · ${label(a.sex)} · ${ageText(a.birth_date)}${a.birth_date_estimated ? " (tahmini)" : ""}`}>
           <AnimalView a={a} />
         </Page>
       )}
@@ -29,7 +29,7 @@ export function AnimalView({ a }: { a: Animal }) {
         <Card title="Kimlik">
           <dl className="small" style={{ margin: 0, display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
             <dt className="muted">Hasta no</dt><dd style={{ margin: 0 }}>#{a.id}</dd>
-            <dt className="muted">Irk</dt><dd style={{ margin: 0 }}>{a.breed}</dd>
+            <dt className="muted">Irk</dt><dd style={{ margin: 0 }}>{breedLabel(a.breed)}</dd>
             <dt className="muted">Mikroçip</dt><dd style={{ margin: 0 }} className="mono">{a.microchip ?? "çipsiz"}</dd>
             <dt className="muted">Doğum</dt>
             <dd style={{ margin: 0 }}>{date(a.birth_date)} {a.birth_date_estimated && <Badge value="warn" text="tahmini yaştan" />}</dd>
@@ -161,7 +161,7 @@ function VaccinationsCard({ animalId }: { animalId: number }) {
             <ErrorBox error={m.error} />
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Aşı</th><th>Doz</th><th>Tarih</th><th>Durum</th><th>Not</th>{canAdminister && <th />}</tr></thead>
+                <thead><tr><th>Aşı</th><th>Doz</th><th>Tarih</th><th>Durum</th><th className="hide-sm">Seri no</th>{canAdminister && <th />}</tr></thead>
                 <tbody>
                   {v.doses.map((d) => {
                     const overdue = d.status === "planned" && d.due_date <= v.today;
@@ -171,7 +171,7 @@ function VaccinationsCard({ animalId }: { animalId: number }) {
                         <td>{d.dose_number}. <Badge value={d.kind} /></td>
                         <td>{d.status === "administered" ? date(d.administered_at) : date(d.due_date)}</td>
                         <td><Badge value={overdue ? "overdue" : d.status} text={overdue && d.due_date < v.today ? "Gecikmiş" : overdue ? "Bugün" : undefined} /></td>
-                        <td className="small muted">{d.batch_no}{d.package_used && " · paketten"}</td>
+                        <td className="small muted hide-sm">{d.batch_no}{d.package_used && " · paketten"}</td>
                         {canAdminister && (
                           <td>{d.status === "planned" && <button className="btn btn-sm" onClick={() => m.mutate(d.id)} disabled={m.isPending}>Uygula</button>}</td>
                         )}
@@ -295,11 +295,11 @@ function ExamsCard({ animalId }: { animalId: number }) {
         {(d) => (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Tarih</th><th>Veteriner</th><th>Bulgu</th><th>Tanı</th><th className="num">Kilo</th></tr></thead>
+              <thead><tr><th>Tarih</th><th className="hide-sm">Veteriner</th><th>Bulgu</th><th className="hide-sm">Tanı</th><th className="num">Kilo</th></tr></thead>
               <tbody>
                 {d.items.map((e) => (
                   <tr key={e.id}>
-                    <td>{dateTime(e.created_at)}</td><td>{e.vet_name}</td><td>{e.findings}</td><td>{e.diagnosis ?? "—"}</td>
+                    <td>{dateTime(e.created_at)}</td><td className="hide-sm">{e.vet_name}</td><td style={{ minWidth: 180 }}>{e.findings}<span className="sub-line">{e.diagnosis ?? ""}</span></td><td className="hide-sm">{e.diagnosis ?? "—"}</td>
                     <td className="num">{e.weight_kg ?? "—"}</td>
                   </tr>
                 ))}
