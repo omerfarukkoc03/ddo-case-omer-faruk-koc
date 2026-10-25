@@ -46,8 +46,11 @@ Desktop (WSL2), ev internet bağlantısı. Sonuç:
 - Tüm servisler (seed dahil) **285 sn**'de `healthy` oldu.
 - Ardından `make verify` 15/15 PASS.
 
-Sürenin en büyük kalemi temel imajların indirilmesiydi (golang tek başına ~50 sn); Linux ya da daha hızlı bir
-bağlantıda süre belirgin şekilde kısalır.
+Sürenin en büyük kalemi temel imajların indirilmesiydi (golang tek başına ~50 sn).
+
+**Linux'ta (GitHub Actions, her commit'te):** Temiz runner'da `docker compose up --build` 46 sn sürüyor; tüm servisler
+seed dahil toplam **~77 sn**'de `healthy` oluyor. Ardından `make verify` 15/15 PASS ve 17 Playwright testi geçiyor
+(CI'daki "E2E" işi).
 
 | Komut | Ne yapar |
 |---|---|
