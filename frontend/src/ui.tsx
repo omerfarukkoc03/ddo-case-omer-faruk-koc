@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { errorText } from "./api";
+import { errorText, isPermanent } from "./api";
 
 // Query her ekranda aynı üç durumu tutarlı gösterir: yükleniyor, hata (yeniden dene), boş.
 export function Query<T>({
@@ -19,9 +19,11 @@ export function Query<T>({
     return (
       <div className="state state-error" role="alert">
         <strong>Veri yüklenemedi.</strong> {errorText(q.error)}
-        <button className="btn btn-sm" onClick={() => q.refetch()}>
-          Yeniden dene
-        </button>
+        {!isPermanent(q.error) && (
+          <button className="btn btn-sm" onClick={() => q.refetch()}>
+            Yeniden dene
+          </button>
+        )}
       </div>
     );
   const data = q.data as T;

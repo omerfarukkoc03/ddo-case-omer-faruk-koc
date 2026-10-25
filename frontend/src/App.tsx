@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { logout, roleLabel, type Role } from "./api";
@@ -16,25 +16,32 @@ import Merge from "./pages/Merge";
 import MyPets from "./pages/MyPets";
 import Reminders from "./pages/Reminders";
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: string;
+interface Page {
+  path: string;
+  element: ReactElement;
   roles: Role[];
+  // nav doluysa sayfa menüde görünür.
+  nav?: { label: string; icon: string };
 }
 
-// Menü rol bazlıdır; asıl yetki kontrolü sunucuda yapılır (her uç noktada RBAC).
-const NAV: NavItem[] = [
-  { to: "/", label: "Pano", icon: "📊", roles: ["vet", "technician", "reception", "pharmacy"] },
-  { to: "/my", label: "Hayvanlarım", icon: "🐾", roles: ["owner"] },
-  { to: "/animals", label: "Hasta kayıtları", icon: "🐾", roles: ["vet", "technician", "reception"] },
-  { to: "/appointments", label: "Randevular", icon: "📅", roles: ["vet", "technician", "reception", "owner"] },
-  { to: "/prescribe", label: "Reçete & doz", icon: "💊", roles: ["vet"] },
-  { to: "/pharmacy", label: "Eczane & stok", icon: "📦", roles: ["pharmacy", "vet"] },
-  { to: "/hospital", label: "Yatan hasta", icon: "🏥", roles: ["vet", "technician", "reception"] },
-  { to: "/billing", label: "Fatura & tahsilat", icon: "🧾", roles: ["reception", "owner"] },
-  { to: "/merge", label: "Mükerrer kayıtlar", icon: "🔀", roles: ["reception"] },
-  { to: "/reminders", label: "Hatırlatmalar", icon: "🔔", roles: ["reception", "vet", "owner"] },
+const ALL: Role[] = ["owner", "vet", "technician", "reception", "pharmacy"];
+
+// Tek kaynak: hem menü hem rota koruması bu tablodan üretilir; menüde görünmeyen bir sayfaya adres çubuğundan
+// girilirse kullanıcı kendi ana sayfasına yönlenir. Asıl yetki kontrolü yine sunucudadır (her uç noktada RBAC);
+// bu katman yalnız kullanıcıya yetkisi olmayan ekranın hiç çizilmemesini sağlar.
+const PAGES: Page[] = [
+  { path: "/", element: <Dashboard />, roles: ["vet", "technician", "reception", "pharmacy"], nav: { label: "Pano", icon: "📊" } },
+  { path: "/my", element: <MyPets />, roles: ["owner"], nav: { label: "Hayvanlarım", icon: "🐾" } },
+  { path: "/animals", element: <Animals />, roles: ["vet", "technician", "reception"], nav: { label: "Hasta kayıtları", icon: "🐾" } },
+  // Sahip de hasta detayına erişebilir; sunucu yalnız kendi hayvanını döndürür.
+  { path: "/animals/:id", element: <AnimalDetail />, roles: ALL },
+  { path: "/appointments", element: <Appointments />, roles: ["vet", "technician", "reception", "owner"], nav: { label: "Randevular", icon: "📅" } },
+  { path: "/prescribe", element: <Prescribe />, roles: ["vet"], nav: { label: "Reçete & doz", icon: "💊" } },
+  { path: "/pharmacy", element: <Pharmacy />, roles: ["pharmacy", "vet"], nav: { label: "Eczane & stok", icon: "📦" } },
+  { path: "/hospital", element: <Hospital />, roles: ["vet", "technician", "reception"], nav: { label: "Yatan hasta", icon: "🏥" } },
+  { path: "/billing", element: <Billing />, roles: ["reception", "owner"], nav: { label: "Fatura & tahsilat", icon: "🧾" } },
+  { path: "/merge", element: <Merge />, roles: ["reception"], nav: { label: "Mükerrer kayıtlar", icon: "🔀" } },
+  { path: "/reminders", element: <Reminders />, roles: ["reception", "vet", "owner"], nav: { label: "Hatırlatmalar", icon: "🔔" } },
 ];
 
 export default function App() {
@@ -43,9 +50,8 @@ export default function App() {
   const [menu, setMenu] = useState(false);
   const loc = useLocation();
   if (!user) return <Login />;
-  const items = NAV.filter((n) => n.roles.includes(user.role));
+  const pages = PAGES.filter((p) => p.roles.includes(user.role));
   const home = user.role === "owner" ? "/my" : "/";
-  const allowed = (path: string) => items.some((n) => n.to === path);
 
   return (
     <div className="app">
@@ -57,9 +63,9 @@ export default function App() {
       <aside className={`sidebar ${menu ? "open" : ""}`} onClick={() => setMenu(false)}>
         <div className="brand">🐾 PatiKlinik</div>
         <nav className="nav">
-          {items.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.to === "/"}>
-              <span aria-hidden>{n.icon}</span> {n.label}
+          {pages.filter((p) => p.nav).map((p) => (
+            <NavLink key={p.path} to={p.path} end={p.path === "/"}>
+              <span aria-hidden>{p.nav!.icon}</span> {p.nav!.label}
             </NavLink>
           ))}
         </nav>
@@ -80,17 +86,9 @@ export default function App() {
       </aside>
       <main className="main" key={loc.pathname}>
         <Routes>
-          <Route path="/" element={allowed("/") ? <Dashboard /> : <Navigate to={home} replace />} />
-          <Route path="/my" element={<MyPets />} />
-          <Route path="/animals" element={<Animals />} />
-          <Route path="/animals/:id" element={<AnimalDetail />} />
-          <Route path="/appointments" element={<Appointments />} />
-          <Route path="/prescribe" element={<Prescribe />} />
-          <Route path="/pharmacy" element={<Pharmacy />} />
-          <Route path="/hospital" element={<Hospital />} />
-          <Route path="/billing" element={<Billing />} />
-          <Route path="/merge" element={<Merge />} />
-          <Route path="/reminders" element={<Reminders />} />
+          {PAGES.map((p) => (
+            <Route key={p.path} path={p.path} element={p.roles.includes(user.role) ? p.element : <Navigate to={home} replace />} />
+          ))}
           <Route path="*" element={<Navigate to={home} replace />} />
         </Routes>
       </main>
