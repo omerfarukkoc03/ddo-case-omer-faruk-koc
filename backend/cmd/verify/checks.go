@@ -251,8 +251,42 @@ func checkRegistration(e *env) error {
 	if err := expectCode((do(e.reception.Post(e.ctx, "/api/animals", dup))), http.StatusUnprocessableEntity, "validation_failed", "geçersiz mikroçip"); err != nil {
 		return err
 	}
-	_, err = expect(do(e.reception.Get(e.ctx, "/api/owners?q=Kay%C4%B1t&limit=5")), http.StatusOK, "sahip araması (keyset)")
-	return err
+	if _, err := expect(do(e.reception.Get(e.ctx, "/api/owners?q=Kay%C4%B1t&limit=5")), http.StatusOK, "sahip araması (keyset)"); err != nil {
+		return err
+	}
+	// Sahip portal hesabı: resepsiyon davet kodu üretir, sahip kodla hesabını etkinleştirir ve yalnız kendi hayvanını görür.
+	email := "verify" + randDigits(8) + "@example.com"
+	inv, err := decode[struct {
+		Code string `json:"code"`
+	}](do(e.reception.Post(e.ctx, fmt.Sprintf("/api/owners/%d/portal-invite", o1), map[string]string{"email": email})), http.StatusCreated, "portal daveti")
+	if err != nil {
+		return err
+	}
+	activate := func(code string) call {
+		return do(apiclient.New(e.api).Post(e.ctx, "/api/auth/activate", map[string]string{"email": email, "code": code, "password": "Dogrulama2026"})) //nolint:gosec // verify'ın kendi oluşturduğu tek seferlik test hesabı
+	}
+	if err := expectCode(activate("AAAA-BBBB"), http.StatusUnauthorized, "invalid_invite", "yanlış davet kodu"); err != nil {
+		return err
+	}
+	tok, err := decode[struct {
+		AccessToken string `json:"access_token"`
+	}](activate(inv.Code), http.StatusCreated, "hesap etkinleştirme")
+	if err != nil {
+		return err
+	}
+	if err := expectCode(activate(inv.Code), http.StatusUnauthorized, "invalid_invite", "kodun ikinci kullanımı"); err != nil {
+		return err
+	}
+	portal := apiclient.New(e.api)
+	portal.Token = tok.AccessToken
+	mine, err := decode[struct{ Items []idObj }](do(portal.Get(e.ctx, "/api/animals")), http.StatusOK, "yeni sahibin hayvanları")
+	if err != nil {
+		return err
+	}
+	if len(mine.Items) != 1 || mine.Items[0].ID != a.ID {
+		return fmt.Errorf("yeni sahip hesabı yalnız kendi hayvanını görmeli: %+v", mine.Items)
+	}
+	return nil
 }
 
 func checkAppointmentExam(e *env) error {

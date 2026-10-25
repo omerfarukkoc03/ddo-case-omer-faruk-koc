@@ -69,7 +69,7 @@ func main() {
 		{"AUTH-1", "Yanlış parola ve bilinmeyen kullanıcı 401", checkWrongPassword},
 		{"AUTH-2", "Token'sız istek 401, yetkisiz rol 403", checkUnauthorizedRole},
 		{"AUTH-3", "Yetki ihlali: sahip başkasının kaydına erişemez", checkOwnership},
-		{"F-1", "Sahip ve hayvan kaydı (mikroçip)", checkRegistration},
+		{"F-1", "Sahip ve hayvan kaydı (mikroçip), sahip portal daveti", checkRegistration},
 		{"F-2", "Randevu ve muayene", checkAppointmentExam},
 		{"F-3", "Aşı takvimi ve hatırlatma", checkVaccinationBasics},
 		{"F-4", "İlaç, reçete ve stok", checkPharmacy},
