@@ -21,7 +21,7 @@ tekrar ve `make reset-demo` sonrasında da çalıştırılabilir.
 │ AUTH-1  │ PASS   │ Yanlış parola ve bilinmeyen kullanıcı 401                        │   0.2s │
 │ AUTH-2  │ PASS   │ Token'sız istek 401, yetkisiz rol 403                            │   0.0s │
 │ AUTH-3  │ PASS   │ Yetki ihlali: sahip başkasının kaydına erişemez                  │   0.0s │
-│ F-1     │ PASS   │ Sahip ve hayvan kaydı (mikroçip)                                 │   0.1s │
+│ F-1     │ PASS   │ Sahip ve hayvan kaydı (mikroçip), sahip portal daveti            │   0.2s │
 │ F-2     │ PASS   │ Randevu ve muayene                                               │   0.1s │
 │ F-3     │ PASS   │ Aşı takvimi ve hatırlatma                                        │   0.7s │
 │ F-4     │ PASS   │ İlaç, reçete ve stok                                             │   0.1s │
@@ -77,7 +77,7 @@ Demo kayıtları (kimlikler sabittir):
 | **AUTH-1** | Yanlış parolayla ya da olmayan e-postayla `POST /api/auth/login` | İkisi de aynı `401 invalid_credentials`; hesabın var olup olmadığı anlaşılmaz. |
 | **AUTH-2** | Token'sız `GET /api/animals`; sahip → `GET /api/drugs`; eczane → `POST /api/appointments`; resepsiyon → `POST /api/prescriptions` | Token yoksa `401 unauthorized`; yetkisiz rol `403 forbidden`. |
 | **AUTH-3** | `sahip2@` ile `GET /api/animals/2` (Deniz'in kedisi), `/api/owners/1`, hayvan listesi | `403 forbidden`; liste yalnız hayvan 1'i içerir; sahip yalnız kendisine kesilen faturaları görür. |
-| **F-1** | Resepsiyon: sahip + ortak sahip kaydı; mikroçipli hayvan kaydı; mikroçiple arama; aynı çiple ikinci kayıt; 15 haneli olmayan çip | Kayıt `201` (çoklu sahip + fatura sorumlusu); arama kaydı bulur; aynı çip `409 duplicate`; geçersiz çip `422 validation_failed`. |
+| **F-1** | Resepsiyon: sahip + ortak sahip kaydı; mikroçipli hayvan kaydı; mikroçiple arama; aynı çiple ikinci kayıt; 15 haneli olmayan çip; sahibe `POST /api/owners/{id}/portal-invite`, sahip `POST /api/auth/activate` | Kayıt `201` (çoklu sahip + fatura sorumlusu); arama kaydı bulur; aynı çip `409 duplicate`; geçersiz çip `422 validation_failed`. Davet `XXXX-XXXX` kodu döner; yanlış kod ya da ikinci kullanım `401 invalid_invite`; etkinleşen sahip yalnız kendi hayvanını görür. |
 | **F-2** | Randevu oluştur → `checked_in` → muayene kaydı (kilo, ateş, bulgu) | Randevu `completed` olur, kilo hayvana işlenir; geçersiz durum geçişi (geldi → gelmedi) `409 invalid_status_transition`. |
 | **F-3** | Yeni köpek kaydı → `GET /api/animals/{id}/vaccinations`; `POST /api/jobs/reminders/run`; sahip `GET /api/reminders` | DHPP, kuduz ve lepto otomatik planlanır; hatırlatmalar e-posta şablonu metniyle listelenir. |
 | **F-4** | Stok girişi → reçete → `POST /api/prescriptions/{id}/dispense` → tekrar teslim | Stok tam reçete miktarı kadar (FEFO) azalır, süresi geçmiş parti kullanılmaz; ikinci teslim `409 prescription_not_active`. |
@@ -111,9 +111,13 @@ Demo kayıtları (kimlikler sabittir):
    Aksoy (fatura sorumlusu)" adına kesilir. Kısmi ödeme alın, kalanından fazlasını girmeyi deneyin.
 8. **Birleştirme (T-4).** Resepsiyon → *Mükerrer kayıtlar*: `#1 Deniz Aksoy ↔ #3 deniz aksoy` → **Birleştir** →
    geçmişte **Geri al**. Hayvanlarda `Karamel ↔ Karamel (çipsiz)` için aynı akış.
-9. **Rol sınırları.** `sahip2@` ile girin: menüde yalnız sahip ekranları görünür, *Sağlık karnesi* yalnız Karamel'i
+9. **Yeni sahibin hesabı.** Resepsiyon → *Hasta kayıtları* → *Yeni sahip kaydı* (e-postasıyla) → *Yeni hayvan kaydı*
+   (sahip no ile). Açılan hasta detayında sahibin yanında **Portal daveti** → *Kod üret*. Çıkış yapın, giriş ekranında
+   **Hesabımı etkinleştir** → aynı e-posta, kod ve yeni parola. Yalnız o hayvan görünür. Kodu ikinci kez kullanmayı
+   deneyin: "kod geçersiz…".
+10. **Rol sınırları.** `sahip2@` ile girin: menüde yalnız sahip ekranları görünür, *Sağlık karnesi* yalnız Karamel'i
    gösterir. Adres çubuğuna `/animals/2` yazın: "Veri yüklenemedi … (forbidden)".
-10. **Mobil.** Tarayıcı genişliğini ~375 px'e indirin: menü ☰ düğmesine taşınır, tablolar kart içinde yatay kayar.
+11. **Mobil.** Tarayıcı genişliğini ~375 px'e indirin: menü ☰ düğmesine taşınır, tablolar kart içinde yatay kayar.
 
 ## (d) Zorlu görevlerin kanıt komutları
 
@@ -130,5 +134,6 @@ PostgreSQL 16 açar).
 | | `cd backend && go test -tags integration -count=1 -v -run 'TestDoubleBookingRaceOnlyOneWins\|TestEmergencyReschedulesConflictingAppointments\|TestCageStateMachine' ./internal/api/` | 20 eşzamanlı rezervasyondan 1'i kabul edilir; acil vaka sonrası hiçbir kaynakta çakışma yok ve taşımalar denetim kaydında; tetikleyici doğrudan SQL'de de geçersiz geçişi reddeder. |
 | | `make load` | Yük altında doğruluk ve gecikme: 4.678 rezervasyon denemesinde çifte rezervasyon 0, rezervasyon p99 425 ms (`load/RESULTS.md`). |
 | **T-4** | `cd backend && go test -tags integration -count=1 -v -run 'TestBillingOwnerRule\|TestOwnerMergeAndUndoRestoresState\|TestAnimalMergeCombinesHistoryAndUndo\|TestPackageSessionDeductionIsConsistent\|TestIdempotencyKeyReplaysSameResult\|TestConcurrentPaymentsNeverOverpay' ./internal/api/` | Fatura kuralının üç dalı; birleştirme + geri almadan sonra ilgili satırlar birebir eski hali; hayvan birleştirmede aşı geçmişi birleşir ve geri ayrılır; 20 eşzamanlı koşullu düşümde 5 seansın tam 5'i düşülür, seans bitince işlem geri alınır; idempotent tekrar; eşzamanlı ödemede fazla tahsilat yok. |
+| **Portal** | `cd backend && go test -tags integration -count=1 -v -run TestOwnerPortalInviteAndActivation ./internal/api/` | Yalnız resepsiyon davet üretir; kod idempotency önbelleğine ve denetim kaydına sızmaz; zayıf parola, yanlış e-posta, yanlış kod, iptal edilmiş ve süresi dolmuş davet reddedilir; kod tek kullanımlık ve büyük/küçük harf ile tireden bağımsız; yeni sahip yalnız kendi hayvanını görür. |
 | **Seed** | `cd backend && go test -v -count=1 -run TestGenerate ./internal/seed/` | Aynı tohum → aynı SHA-256 özeti; farklı tohum → farklı özet; tekil mikroçip, çakışmasız seed randevuları, fazla tahsil edilmemiş faturalar. |
-| **Hepsi** | `make test` | 57 test (40 birim + 17 entegrasyon). CI'da `-race` ile çalışır. |
+| **Hepsi** | `make test` | 58 test (40 birim + 18 entegrasyon). CI'da `-race` ile çalışır. |

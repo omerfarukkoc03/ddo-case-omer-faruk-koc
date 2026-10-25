@@ -155,3 +155,36 @@ yetki, çakışma, idempotans ve denetim kurallarından geçer.
 özetinin aynı olduğunu doğrular. Özet, yüklemede denetim kaydına da yazılır. Veri referans tarihe göre ("bugün")
 göreceli üretilir: aynı tohum ve aynı tarih bit düzeyinde aynı veriyi verir. Tarih `SIM_ANCHOR_DATE` ile
 sabitlenebilir.
+
+---
+
+## ADR-007 — Hayvan sahibi portal hesabı: serbest kayıt yerine klinikte doğrulanan davet kodu
+
+**Bağlam.** Hayvan sahibi sisteme girip kendi hayvanlarının aşı takvimini, randevularını ve faturalarını görebilmeli.
+Bu kayıtlar klinikte, resepsiyonda oluşturulur. Portal hesabı mevcut sahip kaydına bağlanmalı. Bağlantıyı yanlış
+kişi kurabilirse başkasının hayvanlarının sağlık kayıtlarına ve faturalarına erişir.
+
+**Seçenekler.**
+1. Serbest kayıt ve telefon ya da e-postayla otomatik eşleştirme. Telefonu bilen herkes başkasının kaydını
+   sahiplenebilir, bu yüzden güvensiz.
+2. Serbest kayıt ve resepsiyonun kayıtları elle birleştirmesi (mevcut T-4 birleştirmesiyle). Güvenli, ama sahip onaya
+   kadar hiçbir şey göremez; iki adım ve iki kayıt gerekir.
+3. Kimliği klinikte doğrulayan resepsiyonun tek kullanımlık, süreli bir davet kodu üretmesi. Sahip e-posta + kod + kendi
+   parolasıyla hesabını etkinleştirir.
+
+**Karar.** Seçenek 3 (`internal/auth/invite.go`, `internal/api/portal.go`).
+- Kod 8 karakterlik ve kriptografik olarak rastgele. Alfabede I/1, O/0 yok, olasılık uzayı ~10¹².
+- Kod 48 saat geçerli ve tek kullanımlık. Yeni kod eskisini iptal eder. Kod e-postayla eşleşmek zorunda.
+- Veritabanında kodun yalnız SHA-256 özeti tutulur.
+- Kod denetim kaydına yazılmaz. Davet yanıtı `Cache-Control: no-store` taşır ve idempotency middleware'i bu tür
+  yanıtları önbelleğe yazmaz.
+- Hata mesajı hangi bilginin yanlış olduğunu söylemez (`invalid_invite`).
+- Etkinleştirme tek transaction'da yapılır: davet satırı kilitlenir, kullanıcı oluşturulur, davet kullanıldı
+  işaretlenir, oturum açılır. Aynı kodla eşzamanlı iki etkinleştirmeden yalnız biri başarılı olur.
+- Bir sahip kaydına en fazla bir portal hesabı bağlanabilir (`users_owner_uq`). İki kaydında da portal hesabı olan
+  sahipler birleştirilemez (`both_have_portal_accounts`).
+
+**Sonuç.** Hesabın kime ait olduğu klinikteki kimlik doğrulamasına dayanır. Kanıtlar:
+`TestOwnerPortalInviteAndActivation` (kodun sızmaması, tek kullanım, iptal, süre dolumu, yalnız kendi hayvanını görme)
+ve `make verify` F-1. Sınırlamalar: parola sıfırlama akışı yok (resepsiyon yeni davetle çözemez, çünkü hesap zaten
+var); giriş ve etkinleştirme uçlarında hız sınırlaması yok.

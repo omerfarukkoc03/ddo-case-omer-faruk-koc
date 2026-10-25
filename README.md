@@ -11,8 +11,8 @@ Docker Compose ile ayağa kalkar.
 | | |
 |---|---|
 | Hızlı doğrulama | `make verify` → 15/15 PASS, ~5 sn ([TESTING.md](TESTING.md)) |
-| Testler | 57 otomatik test: 40 birim + 17 gerçek PostgreSQL ile entegrasyon. Çekirdek motorlarda kapsam %93–95 |
-| Mimari kararlar | [DECISIONS.md](DECISIONS.md) (6 karar kaydı) |
+| Testler | 58 otomatik test: 40 birim + 18 gerçek PostgreSQL ile entegrasyon. Çekirdek motorlarda kapsam %93–95 |
+| Mimari kararlar | [DECISIONS.md](DECISIONS.md) (7 karar kaydı) |
 | API dokümantasyonu | http://localhost:8080/docs (OpenAPI 3: `backend/internal/api/openapi.yaml`), [requests.http](requests.http) |
 | Yük testi | `make load` → [load/RESULTS.md](load/RESULTS.md) |
 
@@ -67,6 +67,14 @@ bağlantıda süre belirgin şekilde kısalır.
 | Hayvan sahibi | `sahip@patiklinik.test` (ortak sahip: `sahip2@patiklinik.test`) |
 
 Demo hayvanların ve senaryoların listesi [TESTING.md](TESTING.md#a-demo-hesapları) dosyasındadır.
+
+**Yeni hayvan sahibinin hesabı.** Sahipler kendi kendine kayıt olmaz: kimlik klinikte doğrulanır.
+1. Resepsiyon, sahibi ve hayvanını kaydeder.
+2. Hasta detayındaki **Portal daveti** düğmesiyle 8 karakterlik, tek kullanımlık, 48 saat geçerli bir kod üretir.
+3. Sahip, giriş ekranındaki **Hesabımı etkinleştir** bağlantısından e-posta + kod + kendi parolasıyla hesabını açar
+   ve yalnız kendi hayvanlarını görür.
+
+Gerekçe: [ADR-007](DECISIONS.md#adr-007--hayvan-sahibi-portal-hesabı-serbest-kayıt-yerine-klinikte-doğrulanan-davet-kodu).
 
 ---
 
@@ -270,7 +278,7 @@ arama için faydalı. Mükerrer sayımı ise ölçek büyüdükçe önbelleğe a
 ## Test, CI ve yük testi
 
 - **Birim testler (40):** aşı motoru 13, doz 12, planlama 10, kafes FSM 2, seed determinizmi 2, OpenAPI–rota kapsamı 1.
-- **Entegrasyon testleri (17):** testcontainers ile açılan gerçek PostgreSQL 16 üzerinde, HTTP'den veritabanına.
+- **Entegrasyon testleri (18):** testcontainers ile açılan gerçek PostgreSQL 16 üzerinde, HTTP'den veritabanına.
   Yarış durumları gerçek eşzamanlı isteklerle kanıtlanıyor: 20 rezervasyondan 1'i, 10 ödemeden 1'i kabul ediliyor;
   sınırlı stokta tam hesaplanan sayıda teslim yapılıyor; 20 koşullu düşümden tam 5'i başarılı oluyor; 5 eşzamanlı job
   çalıştırması yinelenen hatırlatma üretmiyor.
@@ -299,7 +307,9 @@ arama için faydalı. Mükerrer sayımı ise ölçek büyüdükçe önbelleğe a
   bu bazen gerekir.
 - **Birleştirme:** Birleştirme zinciri ters sırada geri alınmalı. Taşınan satır sonradan değiştiyse geri alma bilerek
   reddedilir; kısmi geri alma ya da birleştirme önerisi yok.
-- **Kimlik:** Çıkıştan sonra access token en fazla 15 dk daha geçerli kalır (JWT'nin bilinen ödünleşimi).
+- **Kimlik:** Çıkıştan sonra access token en fazla 15 dk daha geçerli kalır (JWT'nin bilinen ödünleşimi). Giriş ve
+  davet kodu uçlarında hız sınırlaması (rate limiting) yok. Davet kodu uzayı ~10¹² ve kod 48 saatte geçersizleşiyor,
+  bu yüzden kaba kuvvet pratik değil; yine de üretimde IP ve hesap başına deneme sınırı eklenmeli.
 - **Hatırlatmalar:** Yalnız oluşturulur ve şablon metniyle listelenir; gerçek e-posta gönderimi yok.
 - **Ölçek:** Canlı panodaki sayımlar her istekte `count(*)` çalıştırıyor. 15 bin kayıtta milisaniyeler sürüyor,
   milyonlarca kayıtta önbellek ya da sayaç tablosu gerekir.
