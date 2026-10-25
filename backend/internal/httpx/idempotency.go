@@ -19,6 +19,7 @@ import (
 //   - Aynı anahtar farklı gövde/yol ile → 422 idempotency_key_reused.
 //   - İlk istek hâlâ işleniyorsa → 409 idempotency_in_progress.
 //   - 5xx yanıtlar saklanmaz; istemci aynı anahtarla güvenle yeniden deneyebilir.
+//   - Cache-Control: no-store taşıyan yanıtlar (davet kodu gibi gizli içerik) veritabanına yazılmaz.
 //
 // userOf kimliği doğrulanmış kullanıcının kimliğini döndürür (auth paketine döngüsel bağımlılık olmasın diye fonksiyon).
 func Idempotency(pool *pgxpool.Pool, userOf func(context.Context) (int64, bool)) func(http.Handler) http.Handler {
@@ -68,7 +69,8 @@ func Idempotency(pool *pgxpool.Pool, userOf func(context.Context) (int64, bool))
 
 			// Yanıtı saklama işi istek bağlamından bağımsızdır: istemci bağlantıyı kesse de sonuç kaydedilmeli.
 			storeCtx := context.WithoutCancel(ctx)
-			if status >= 500 {
+			// 5xx yanıtlar ve gizli içerik taşıyan (Cache-Control: no-store, ör. davet kodu) yanıtlar saklanmaz.
+			if status >= 500 || rec.header.Get("Cache-Control") == "no-store" {
 				_, _ = pool.Exec(storeCtx, `DELETE FROM idempotency_keys WHERE user_id=$1 AND key=$2`, uid, key)
 			} else {
 				_, _ = pool.Exec(storeCtx, `UPDATE idempotency_keys SET status_code=$3, response_body=$4 WHERE user_id=$1 AND key=$2`,

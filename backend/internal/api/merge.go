@@ -184,6 +184,13 @@ func (a *API) merge(w http.ResponseWriter, r *http.Request) error {
 
 func (a *API) mergeOwners(r *http.Request, tx pgx.Tx, survivor, dup int64, snap *mergeSnapshot) error {
 	ctx := r.Context()
+	var accounts int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM users WHERE owner_id IN ($1,$2)`, survivor, dup).Scan(&accounts); err != nil {
+		return err
+	}
+	if accounts == 2 {
+		return httpx.Conflict("both_have_portal_accounts", "both owner records have a portal account; one must be closed before merging")
+	}
 	rows, err := tx.Query(ctx, `SELECT animal_id, owner_id, relation, is_billing, since FROM animal_owners WHERE owner_id=$1 ORDER BY animal_id FOR UPDATE`, dup)
 	if err != nil {
 		return err

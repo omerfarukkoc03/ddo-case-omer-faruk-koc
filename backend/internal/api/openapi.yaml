@@ -79,6 +79,21 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/Refresh" }
       responses:
         "204": { description: Kapatıldı }
+  /api/auth/activate:
+    post:
+      tags: [Kimlik]
+      summary: Hayvan sahibi portal hesabını davet koduyla etkinleştir ve oturum aç
+      description: |
+        Kimlik doğrulama gerektirmez. Kod resepsiyondan alınır (tek kullanımlık, 48 saat). E-posta davetteki e-postayla
+        eşleşmelidir. Hangi bilginin yanlış olduğu söylenmez (`401 invalid_invite`). Parola: en az 8 karakter, harf ve rakam.
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [email, code, password], properties: { email: { type: string }, code: { type: string, example: K7QM-4XPA }, password: { type: string } } } } }
+      responses:
+        "201": { description: Hesap oluşturuldu ve oturum açıldı, content: { application/json: { schema: { $ref: "#/components/schemas/Tokens" } } } }
+        "401": { description: "Kod geçersiz, süresi dolmuş, kullanılmış ya da e-postayla eşleşmiyor (`invalid_invite`)" }
+        "422": { $ref: "#/components/responses/Validation" }
   /api/auth/me:
     get:
       tags: [Kimlik]
@@ -118,6 +133,19 @@ paths:
         "200": { description: Sahip, content: { application/json: { schema: { type: object, properties: { owner: { $ref: "#/components/schemas/Owner" }, animals: { type: array, items: { $ref: "#/components/schemas/Animal" } } } } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/owners/{id}/portal-invite:
+    post:
+      tags: [F-1 Sahip ve hayvan]
+      summary: Sahip için portal davet kodu üret (kimlik klinikte doğrulanır)
+      description: |
+        Roller: reception. Tek kullanımlık, 48 saat geçerli `XXXX-XXXX` kodu döner; önceki kullanılmamış davet iptal edilir.
+        Kod yalnız bu yanıtta görünür: veritabanında SHA-256 özeti tutulur, denetim kaydına ve idempotency önbelleğine
+        yazılmaz (`Cache-Control: no-store`).
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string } } } } } }
+      responses:
+        "201": { description: Davet, content: { application/json: { schema: { type: object, properties: { owner_id: { type: integer }, email: { type: string }, code: { type: string }, expires_at: { type: string, format: date-time } } } } } }
+        "409": { description: "`portal_account_exists`, `email_taken`, `already_merged`" }
   /api/animals:
     get:
       tags: [F-1 Sahip ve hayvan]

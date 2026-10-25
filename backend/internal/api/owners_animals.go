@@ -137,11 +137,13 @@ func (a *API) getOwner(w http.ResponseWriter, r *http.Request) error {
 // ---------------------------------------------------------------------------
 
 type AnimalOwner struct {
-	OwnerID   int64  `json:"owner_id"`
-	FullName  string `json:"full_name"`
-	Phone     string `json:"phone"`
-	Relation  string `json:"relation"`
-	IsBilling bool   `json:"is_billing"`
+	OwnerID          int64   `json:"owner_id"`
+	FullName         string  `json:"full_name"`
+	Phone            string  `json:"phone"`
+	Email            *string `json:"email"`
+	Relation         string  `json:"relation"`
+	IsBilling        bool    `json:"is_billing"`
+	HasPortalAccount bool    `json:"has_portal_account"`
 }
 
 type Animal struct {
@@ -216,7 +218,7 @@ func (a *API) loadAnimal(r *http.Request, db DB, animalID int64) (Animal, error)
 		return Animal{}, err
 	}
 	orows, err := db.Query(r.Context(), `
-		SELECT o.id, o.full_name, o.phone, ao.relation, ao.is_billing
+		SELECT o.id, o.full_name, o.phone, o.email, ao.relation, ao.is_billing, EXISTS (SELECT 1 FROM users u WHERE u.owner_id = o.id)
 		FROM animal_owners ao JOIN owners o ON o.id = ao.owner_id
 		WHERE ao.animal_id = $1 ORDER BY ao.is_billing DESC, ao.since, o.id`, animalID)
 	if err != nil {
@@ -224,7 +226,7 @@ func (a *API) loadAnimal(r *http.Request, db DB, animalID int64) (Animal, error)
 	}
 	x.Owners, err = pgx.CollectRows(orows, func(row pgx.CollectableRow) (AnimalOwner, error) {
 		var ao AnimalOwner
-		return ao, row.Scan(&ao.OwnerID, &ao.FullName, &ao.Phone, &ao.Relation, &ao.IsBilling)
+		return ao, row.Scan(&ao.OwnerID, &ao.FullName, &ao.Phone, &ao.Email, &ao.Relation, &ao.IsBilling, &ao.HasPortalAccount)
 	})
 	return x, err
 }

@@ -56,6 +56,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/auth/login", httpx.H(a.login))
 		r.Post("/auth/refresh", httpx.H(a.refresh))
 		r.Post("/auth/logout", httpx.H(a.logout))
+		r.Post("/auth/activate", httpx.H(a.activate))
 
 		r.Group(func(r chi.Router) {
 			r.Use(d.Auth.Authenticate)
@@ -69,6 +70,7 @@ func NewRouter(d Deps) http.Handler {
 			r.With(roles(staff...)).Get("/owners", httpx.H(a.listOwners))
 			r.With(roles(frontDesk...)).Post("/owners", httpx.H(a.createOwner))
 			r.With(roles(everyone...)).Get("/owners/{id}", httpx.H(a.getOwner))
+			r.With(roles(frontDesk...)).Post("/owners/{id}/portal-invite", httpx.H(a.createPortalInvite))
 			r.With(roles(everyone...)).Get("/animals", httpx.H(a.listAnimals))
 			r.With(roles(frontDesk...)).Post("/animals", httpx.H(a.createAnimal))
 			r.With(roles(everyone...)).Get("/animals/{id}", httpx.H(a.getAnimal))
