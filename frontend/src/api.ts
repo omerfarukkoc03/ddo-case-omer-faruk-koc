@@ -112,6 +112,13 @@ export async function login(email: string, password: string): Promise<User> {
   return s.user;
 }
 
+// activateAccount klinikten alınan davet koduyla sahip hesabını oluşturur ve oturum açar.
+export async function activateAccount(email: string, code: string, password: string): Promise<User> {
+  const s = await api<Session>("/api/auth/activate", { method: "POST", body: { email, code, password } });
+  saveSession(s);
+  return s.user;
+}
+
 export async function logout() {
   const s = loadSession();
   if (s) {
@@ -204,6 +211,10 @@ const errorMessages: Record<string, string> = {
   prescription_immutable: "Reçetenin hesap alanları yazıldıktan sonra değiştirilemez.",
   audit_append_only: "Denetim kaydı değiştirilemez.",
   method_not_allowed: "Bu işlem desteklenmiyor.",
+  invalid_invite: "Kod geçersiz, süresi dolmuş, daha önce kullanılmış ya da e-posta adresiyle eşleşmiyor. Klinikten yeni kod isteyebilirsiniz.",
+  portal_account_exists: "Bu sahibin zaten bir portal hesabı var.",
+  email_taken: "Bu e-posta başka bir hesapta kullanılıyor.",
+  both_have_portal_accounts: "İki sahip kaydının da portal hesabı var; birleştirmeden önce biri kapatılmalı.",
   timeout: "İstek zaman aşımına uğradı; yeniden deneyin.",
   internal: "Beklenmeyen bir sunucu hatası oluştu.",
 };

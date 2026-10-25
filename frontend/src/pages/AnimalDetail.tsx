@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, date, dateTime, speciesLabel } from "../api";
 import { useHasRole } from "../auth";
-import type { Animal, Prescription, Vaccinations } from "../types";
+import type { Animal, AnimalOwner, Prescription, Vaccinations } from "../types";
 import { Badge, Card, ErrorBox, Field, Page, Query, WeightChart } from "../ui";
 
 export default function AnimalDetail() {
@@ -57,6 +57,7 @@ function OwnersCard({ a }: { a: Animal }) {
     mutationFn: (ownerId: number) => api(`/api/animals/${a.id}/billing-owner`, { method: "PUT", body: { owner_id: ownerId } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["animal", a.id] }),
   });
+  const [inviteFor, setInviteFor] = useState<AnimalOwner | null>(null);
   return (
     <Card title="Sahipler">
       <ul className="events">
@@ -65,19 +66,68 @@ function OwnersCard({ a }: { a: Animal }) {
             <span>
               <strong>{o.full_name}</strong> <span className="muted small">#{o.owner_id} · {o.phone} · {o.relation === "owner" ? "sahip" : o.relation === "co_owner" ? "ortak sahip" : "bakıcı"}</span>
             </span>
-            {o.is_billing ? (
-              <Badge value="info" text="Fatura sorumlusu" />
-            ) : (
-              isReception && <button className="btn btn-sm" onClick={() => m.mutate(o.owner_id)} disabled={m.isPending}>Fatura sorumlusu yap</button>
-            )}
+            <span className="row">
+              {o.is_billing ? (
+                <Badge value="info" text="Fatura sorumlusu" />
+              ) : (
+                isReception && <button className="btn btn-sm" onClick={() => m.mutate(o.owner_id)} disabled={m.isPending}>Fatura sorumlusu yap</button>
+              )}
+              {o.has_portal_account ? (
+                <Badge value="ok" text="Portal hesabı var" />
+              ) : (
+                isReception && <button className="btn btn-sm" onClick={() => setInviteFor(o)}>Portal daveti</button>
+              )}
+            </span>
           </li>
         ))}
       </ul>
+      {inviteFor && <PortalInvite owner={inviteFor} onClose={() => setInviteFor(null)} />}
       <p className="small muted">
         Fatura kuralı: elle seçilen sahip → fatura sorumlusu → ilk kayıtlı sahip.
       </p>
       <ErrorBox error={m.error} />
     </Card>
+  );
+}
+
+// PortalInvite resepsiyonun, kimliğini klinikte doğruladığı sahibe tek kullanımlık etkinleştirme kodu vermesidir.
+// Kod yalnız bu ekranda bir kez görünür; sunucu yalnız özetini saklar.
+function PortalInvite({ owner, onClose }: { owner: AnimalOwner; onClose: () => void }) {
+  const [email, setEmail] = useState(owner.email ?? "");
+  const m = useMutation({
+    mutationFn: () =>
+      api<{ code: string; email: string; expires_at: string }>(`/api/owners/${owner.owner_id}/portal-invite`, { method: "POST", body: { email } }),
+  });
+  return (
+    <div className="card" style={{ marginTop: 12, background: "var(--surface-2)" }}>
+      <div className="card-head">
+        <h2>Portal daveti · {owner.full_name}</h2>
+        <button className="btn btn-sm" onClick={onClose}>Kapat</button>
+      </div>
+      {!m.data ? (
+        <form className="form" onSubmit={(e) => { e.preventDefault(); m.mutate(); }}>
+          <p className="small muted" style={{ margin: 0 }}>
+            Sahibin kimliğini doğruladıktan sonra kod üretin. Kod 48 saat geçerli ve tek kullanımlıktır; yeni kod eskisini geçersiz kılar.
+          </p>
+          <Field label="Sahibin e-postası" hint="Sahip bu e-posta ve kodla hesabını etkinleştirir">
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </Field>
+          <ErrorBox error={m.error} />
+          <div><button className="btn btn-primary btn-sm" disabled={m.isPending}>Kod üret</button></div>
+        </form>
+      ) : (
+        <div className="stack">
+          <div className="mono" style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "0.15em", textAlign: "center", padding: 12 }}>
+            {m.data.code}
+          </div>
+          <p className="small" style={{ margin: 0 }}>
+            Sahibe iletin: <em>"PatiKlinik giriş ekranında <strong>Hesabımı etkinleştir</strong>'e tıklayın, <strong>{m.data.email}</strong> adresini ve
+            bu kodu girip kendi parolanızı belirleyin."</em> Son geçerlilik: {dateTime(m.data.expires_at)}.
+          </p>
+          <p className="small muted" style={{ margin: 0 }}>Kod bir daha gösterilmez; kaybolursa yeni kod üretin.</p>
+        </div>
+      )}
+    </div>
   );
 }
 

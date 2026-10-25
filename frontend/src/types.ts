@@ -2,8 +2,10 @@ export interface AnimalOwner {
   owner_id: number;
   full_name: string;
   phone: string;
+  email: string | null;
   relation: string;
   is_billing: boolean;
+  has_portal_account: boolean;
 }
 
 export interface Animal {
