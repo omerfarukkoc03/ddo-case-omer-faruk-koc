@@ -532,7 +532,7 @@ func (a *API) listDuplicates(w http.ResponseWriter, r *http.Request) error {
 	switch entity {
 	case "owners":
 		q = `
-			SELECT o1.id, o1.full_name || ' (' || o1.phone || ')', o2.id, o2.full_name || ' (' || o2.phone || ')', 'aynı telefon numarası'
+			SELECT o1.id, o1.full_name || ' · ' || o1.phone, o2.id, o2.full_name || ' · ' || o2.phone, 'aynı telefon numarası'
 			FROM owners o1 JOIN owners o2 ON o2.phone = o1.phone AND o2.id > o1.id
 			WHERE o1.merged_into IS NULL AND o2.merged_into IS NULL
 			ORDER BY o1.id LIMIT 100`
@@ -545,8 +545,10 @@ func (a *API) listDuplicates(w http.ResponseWriter, r *http.Request) error {
 			    FROM animals a JOIN animal_owners ao ON ao.animal_id = a.id JOIN owners o ON o.id = ao.owner_id
 			    WHERE a.merged_into IS NULL
 			)
-			SELECT DISTINCT a1.id, a1.name || ' / ' || a1.species || ' / ' || coalesce(a1.microchip, 'çipsiz'),
-			       a2.id, a2.name || ' / ' || a2.species || ' / ' || coalesce(a2.microchip, 'çipsiz'),
+			SELECT DISTINCT a1.id, a1.name || ' · ' || CASE a1.species WHEN 'dog' THEN 'köpek' WHEN 'cat' THEN 'kedi' ELSE 'tavşan' END
+			                 || ' · ' || coalesce(a1.microchip, 'çipsiz'),
+			       a2.id, a2.name || ' · ' || CASE a2.species WHEN 'dog' THEN 'köpek' WHEN 'cat' THEN 'kedi' ELSE 'tavşan' END
+			                 || ' · ' || coalesce(a2.microchip, 'çipsiz'),
 			       'aynı ad ve tür, aynı telefonlu sahip'
 			FROM ap a1
 			JOIN ap a2 ON a2.phone = a1.phone AND a2.species = a1.species AND lower(a2.name) = lower(a1.name) AND a2.id > a1.id

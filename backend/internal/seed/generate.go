@@ -108,6 +108,7 @@ type gen struct {
 	billing    map[int64]int64   // animal → fatura sorumlusu (yoksa 0)
 	ownerSince map[[2]int64]time.Time
 	adminDoses map[int64][]doseRec // animal → yapılmış dozlar
+	animalRow  map[int64][]any     // animal → animals tablosundaki satır (güncel kilo son ölçümle eşitlenir)
 }
 
 type animalRec struct {
@@ -174,6 +175,7 @@ func Generate(seed int64, today time.Time, loc *time.Location, scale Scale) *Dat
 		billing:    map[int64]int64{},
 		ownerSince: map[[2]int64]time.Time{},
 		adminDoses: map[int64][]doseRec{},
+		animalRow:  map[int64][]any{},
 	}
 	// Tablo sırası yükleme sırasıdır (yabancı anahtar bağımlılıkları).
 	g.ds.table("owners", "id", "full_name", "phone", "email", "address", "created_at")
@@ -359,8 +361,10 @@ func (g *gen) addAnimal(a animalRec, sex string, chip bool, owners []int64, bill
 	if chip {
 		mc = microchip(a.ID)
 	}
-	w := g.weightAt(a, g.today)
+	// Güncel kilo kayıttaki ölçümle başlar; her muayene ölçümü onu günceller (kilo geçmişiyle tutarlı).
+	w := g.weightAt(a, a.Reg)
 	t.add(a.ID, a.Name, a.Species, a.Breed.Name, sex, mc, a.Birth, a.Estimated, w, g.localNoon(a.Reg))
+	g.animalRow[a.ID] = t.Rows[len(t.Rows)-1]
 	g.animals = append(g.animals, a)
 	for i, oid := range owners {
 		since := g.localNoon(a.Reg).AddDate(0, 0, 30*i)
@@ -601,6 +605,7 @@ func (g *gen) genExaminations() {
 			eid := g.id("examinations")
 			exams.add(eid, a.ID, vet, w, temp, finding, diag, at)
 			weights.add(g.id("animal_weights"), a.ID, w, at, vet)
+			g.animalRow[a.ID][8] = w
 			if day.Before(yearAgo) {
 				continue
 			}

@@ -65,7 +65,8 @@ func live(ctx context.Context, apiURL string, seedValue int64, loc *time.Locatio
 				resp, err = reception.Post(ctx, "/api/appointments", map[string]any{
 					"animal_id": animal, "vet_id": v, "room_id": v + 3, "kind": "exam", "starts_at": start, "duration_min": 30,
 					"reason": "Simülatör: kontrol muayenesi"}, key)
-			case x < 0.48:
+			case x < 0.457 && clinicOpen(loc):
+				// ~10 dakikada bir, yalnız mesai saatlerinde: gerçekçi bir günde birkaç acil vaka.
 				action = "emergency"
 				resp, err = vet.Post(ctx, "/api/appointments/emergency", map[string]any{
 					"animal_id": animal, "duration_min": 30, "reason": "Simülatör: acil vaka"}, key)
@@ -133,4 +134,9 @@ func completeFinishedEmergencies(ctx context.Context, c *apiclient.Client, loc *
 			_, _ = c.Post(ctx, fmt.Sprintf("/api/appointments/%d/status", a.ID), map[string]string{"status": "completed"})
 		}
 	}
+}
+
+func clinicOpen(loc *time.Location) bool {
+	h := time.Now().In(loc).Hour()
+	return h >= 9 && h < 19
 }

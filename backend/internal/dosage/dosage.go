@@ -99,6 +99,24 @@ var (
 
 func errCode(status int, code, msg string) *httpx.Error { return httpx.NewError(status, code, msg) }
 
+var speciesTR = map[string]string{"dog": "Köpek", "cat": "Kedi", "rabbit": "Tavşan"}
+
+// SpeciesTR tür kodunun Türkçe adını döndürür (açıklama metinleri için).
+func SpeciesTR(s string) string {
+	if v, ok := speciesTR[s]; ok {
+		return v
+	}
+	return s
+}
+
+// BreedTR ırk adını açıklama metni için döndürür; "mixed" melez olarak yazılır.
+func BreedTR(b string) string {
+	if b == "" || strings.EqualFold(b, "mixed") {
+		return "melez"
+	}
+	return b
+}
+
 // Calculate dozu hesaplar ve güvenlik kurallarını uygular.
 func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request) (Result, error) {
 	v := httpx.Validation{}
@@ -143,8 +161,8 @@ func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request
 		mgPerKg = *req.MgPerKg
 	}
 	r.MgPerKg = mgPerKg
-	step("Hasta", fmt.Sprintf("tür=%s, ırk=%s, kilo", req.Species, req.Breed), req.WeightKg.StringFixed(3)+" kg")
-	step("Önerilen aralık", fmt.Sprintf("%s (%s) için", drug.Name, req.Species),
+	step("Hasta", fmt.Sprintf("%s · %s · güncel kilo", SpeciesTR(req.Species), BreedTR(req.Breed)), req.WeightKg.String()+" kg")
+	step("Önerilen aralık", fmt.Sprintf("%s, %s için", drug.Name, strings.ToLower(SpeciesTR(req.Species))),
 		fmt.Sprintf("%s – %s mg/kg", dosing.MgPerKgMin.String(), dosing.MgPerKgMax.String()))
 	step("Seçilen doz oranı", "", mgPerKg.String()+" mg/kg")
 
@@ -154,7 +172,7 @@ func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request
 	}
 
 	dose := req.WeightKg.Mul(mgPerKg).Round(3)
-	step("Doz", fmt.Sprintf("%s kg × %s mg/kg", req.WeightKg.StringFixed(3), mgPerKg), dose.StringFixed(3)+" mg")
+	step("Doz", fmt.Sprintf("%s kg × %s mg/kg", req.WeightKg.String(), mgPerKg), dose.String()+" mg")
 
 	// Sınır kontrolleri: hem mg/kg hem tek doz üst sınırı.
 	var exceed []string
@@ -163,7 +181,7 @@ func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request
 		exceed = append(exceed, fmt.Sprintf("%s mg/kg > azami %s mg/kg", mgPerKg, dosing.MgPerKgMax))
 	}
 	if dosing.MaxSingleDoseMg != nil && dose.GreaterThan(*dosing.MaxSingleDoseMg) {
-		exceed = append(exceed, fmt.Sprintf("%s mg > tek doz üst sınırı %s mg", dose.StringFixed(3), dosing.MaxSingleDoseMg))
+		exceed = append(exceed, fmt.Sprintf("%s mg > tek doz üst sınırı %s mg", dose.String(), dosing.MaxSingleDoseMg))
 		if dose.GreaterThan(dosing.MaxSingleDoseMg.Mul(hardCapFactor)) {
 			return Result{}, errCode(http.StatusUnprocessableEntity, "dose_hard_limit",
 				"dose exceeds twice the maximum single dose; this cannot be overridden")
@@ -179,7 +197,7 @@ func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request
 		if len(strings.TrimSpace(req.OverrideReason)) < minOverrideLen {
 			return Result{}, errCode(http.StatusUnprocessableEntity, "max_dose_exceeded",
 				"dose exceeds the maximum; a justification (override_reason, min 10 chars) is required").
-				With("violations", exceed).With("dose_mg", dose.StringFixed(3))
+				With("violations", exceed).With("dose_mg", dose.String())
 		}
 		r.Warnings = append(r.Warnings, "Azami doz gerekçeli onayla aşıldı: "+strings.TrimSpace(req.OverrideReason))
 	} else {
@@ -198,12 +216,12 @@ func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request
 			return Result{}, err
 		}
 		actual := tablets.Mul(*drug.TabletMg)
-		step("Tablet", fmt.Sprintf("%s mg ÷ %s mg/tablet = %s → ¼ tablete yuvarlandı", dose.StringFixed(3), drug.TabletMg, exact.StringFixed(3)),
+		step("Tablet", fmt.Sprintf("%s mg ÷ %s mg/tablet = %s → ¼ tablete yuvarlandı", dose.String(), drug.TabletMg, exact.String()),
 			tablets.String()+" tablet")
 		if !actual.Equal(dose) {
 			step("Gerçek doz", fmt.Sprintf("%s tablet × %s mg", tablets, drug.TabletMg),
-				fmt.Sprintf("%s mg (%s mg/kg)", actual.StringFixed(3), actual.Div(req.WeightKg).StringFixed(3)))
-			r.Warnings = append(r.Warnings, fmt.Sprintf("Tablet bölünebilirliği nedeniyle uygulanan doz %s mg", actual.StringFixed(3)))
+				fmt.Sprintf("%s mg (%s mg/kg)", actual.String(), actual.Div(req.WeightKg).String()))
+			r.Warnings = append(r.Warnings, fmt.Sprintf("Tablet bölünebilirliği nedeniyle uygulanan doz %s mg", actual.String()))
 		}
 		r.DoseMg = actual
 		r.Tablets = &tablets
@@ -219,7 +237,7 @@ func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request
 		vol := dose.Div(conc).Round(2)
 		r.DoseMg = dose
 		r.VolumeMl = &vol
-		step("Hacim", fmt.Sprintf("%s mg ÷ %s mg/mL", dose.StringFixed(3), conc), vol.StringFixed(2)+" mL")
+		step("Hacim", fmt.Sprintf("%s mg ÷ %s mg/mL", dose.String(), conc), vol.String()+" mL")
 		if req.DiluteToMgPerMl != nil {
 			target := *req.DiluteToMgPerMl
 			if !target.IsPositive() || !target.LessThan(conc) {
@@ -229,14 +247,14 @@ func Calculate(drug Drug, dosing *Dosing, contra []Contraindication, req Request
 			final := dose.Div(target).Round(2)
 			d := Dilution{TargetMgPerMl: target, StockMl: vol, FinalMl: final, DiluentMl: final.Sub(vol)}
 			r.Dilution = &d
-			step("Seyreltme (C1·V1 = C2·V2)", fmt.Sprintf("V2 = %s mg ÷ %s mg/mL", dose.StringFixed(3), target), final.StringFixed(2)+" mL toplam")
-			step("Seyreltici", fmt.Sprintf("%s mL stok + (%s − %s) mL serum fizyolojik", vol.StringFixed(2), final.StringFixed(2), vol.StringFixed(2)),
-				d.DiluentMl.StringFixed(2)+" mL")
+			step("Seyreltme (C1·V1 = C2·V2)", fmt.Sprintf("V2 = %s mg ÷ %s mg/mL", dose.String(), target), final.String()+" mL toplam")
+			step("Seyreltici", fmt.Sprintf("%s mL stok + (%s − %s) mL serum fizyolojik", vol.String(), final.String(), vol.String()),
+				d.DiluentMl.String()+" mL")
 		}
 		total := vol.Mul(courseDoses).Ceil()
 		r.DispenseQuantity = int(total.IntPart())
 		r.DispenseUnit = "ml"
-		step("Kür miktarı", fmt.Sprintf("%s mL × %d/gün × %d gün (yukarı yuvarlanır)", vol.StringFixed(2), req.DosesPerDay, req.DurationDays), total.String()+" mL")
+		step("Kür miktarı", fmt.Sprintf("%s mL × %d/gün × %d gün (yukarı yuvarlanır)", vol.String(), req.DosesPerDay, req.DurationDays), total.String()+" mL")
 	}
 	if r.DispenseQuantity < 1 {
 		r.DispenseQuantity = 1
